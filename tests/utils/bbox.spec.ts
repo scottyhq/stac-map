@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clampToGlobalExtents, resolveInitialBbox } from "../../src/utils/bbox";
+import {
+  bboxesIntersect,
+  clampToGlobalExtents,
+  resolveInitialBbox,
+} from "../../src/utils/bbox";
 
 describe("resolveInitialBbox", () => {
   it("returns the parsed bbox for a valid bbox param", () => {
@@ -76,5 +80,24 @@ describe("clampToGlobalExtents", () => {
     expect(clampToGlobalExtents([-300, -150, 400, 150])).toEqual([
       -180, -90, 180, 90,
     ]);
+  });
+});
+
+describe("bboxesIntersect", () => {
+  it("is true for overlapping boxes", () => {
+    expect(bboxesIntersect([0, 0, 10, 10], [5, 5, 15, 15])).toBe(true);
+  });
+
+  it("is true when one box contains the other", () => {
+    expect(bboxesIntersect([0, 0, 10, 10], [2, 2, 3, 3])).toBe(true);
+  });
+
+  it("is false for disjoint boxes", () => {
+    expect(bboxesIntersect([0, 0, 10, 10], [20, 0, 30, 10])).toBe(false);
+    expect(bboxesIntersect([0, 0, 10, 10], [0, 20, 10, 30])).toBe(false);
+  });
+
+  it("is true for a box spanning the globe", () => {
+    expect(bboxesIntersect([-180, -90, 180, 90], [20, 0, 30, 10])).toBe(true);
   });
 });

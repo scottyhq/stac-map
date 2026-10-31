@@ -8,13 +8,14 @@ import {
   type BandRange,
 } from "@/utils/single-band";
 import {
+  fetchStacGeoparquetAdjacentIds,
   fetchStacGeoparquetItem,
   fetchStacGeoparquetTable,
   fetchStacGeoparquetValue,
 } from "@/utils/stac-geoparquet";
 import type { GeoTIFF } from "@developmentseed/geotiff";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { StacAsset } from "stac-ts";
 import { fetchQueryablesSchema, fetchStacValue } from "../utils/stac";
@@ -91,6 +92,37 @@ export function useStacGeoparquetItem({
     queryKey: ["stac-geoparquet-item", href, id],
     queryFn: async () =>
       fetchStacGeoparquetItem({ href, connection, hivePartitioning, id }),
+    // Keep showing the current item while stepping to the next one
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useStacGeoparquetAdjacentIds({
+  href,
+  connection,
+  id,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  id: string;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  const datetimeFilter = useStore((store) => store.datetimeFilters[href]);
+  return useQuery({
+    queryKey: [
+      "stac-geoparquet-adjacent-ids",
+      href,
+      id,
+      datetimeFilter ?? null,
+    ],
+    queryFn: async () =>
+      fetchStacGeoparquetAdjacentIds({
+        href,
+        connection,
+        hivePartitioning,
+        id,
+        datetimeFilter,
+      }),
   });
 }
 

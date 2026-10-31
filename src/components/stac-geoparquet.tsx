@@ -1,6 +1,9 @@
 import { useStacGeoparquetTable, useStacGeoparquetValue } from "@/hooks/stac";
 import { useStore } from "@/store";
-import type { SupportedGeometryType } from "@/utils/stac-geoparquet";
+import {
+  datetimeFilterToWhere,
+  type SupportedGeometryType,
+} from "@/utils/stac-geoparquet";
 import type { Color } from "@deck.gl/core";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import {
@@ -30,12 +33,10 @@ export default function StacGeoparquet({
     return () => setDatetimeExtent("geoparquet", null);
   }, [datetimeExtent, setDatetimeExtent]);
 
-  const where = useMemo(() => {
-    if (!datetimeFilter) return undefined;
-    const start = new Date(datetimeFilter[0]).toISOString();
-    const end = new Date(datetimeFilter[1]).toISOString();
-    return `datetime BETWEEN TIMESTAMP '${start}' AND TIMESTAMP '${end}'`;
-  }, [datetimeFilter]);
+  const where = useMemo(
+    () => datetimeFilterToWhere(datetimeFilter),
+    [datetimeFilter]
+  );
 
   const result = useStacGeoparquetTable({ href, connection, where });
   if (result.error)

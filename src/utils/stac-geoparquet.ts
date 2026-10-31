@@ -322,3 +322,57 @@ export async function fetchStacGeoparquetItem({
   item.geometry = JSON.parse(item.geometry);
   return item;
 }
+
+/**
+ * Builds a SQL `WHERE` clause that keeps items whose `datetime` falls inside a
+ * datetime filter (milliseconds since the epoch).
+ */
+export function datetimeFilterToWhere(
+  filter: [number, number] | undefined,
+  column = "datetime"
+): string | undefined {
+  if (!filter) return undefined;
+  const start = new Date(filter[0]).toISOString();
+  const end = new Date(filter[1]).toISOString();
+  return `${column} BETWEEN TIMESTAMP '${start}' AND TIMESTAMP '${end}'`;
+}
+
+/**
+ * Finds the items immediately before and after `id` in time that intersect its
+ * geometry, i.e. the same place at the previous and next time step. Items with
+ * the same datetime are ordered by id. Only items inside `datetimeFilter` can be
+ * stepped to.
+ */
+export async function fetchStacGeoparquetAdjacentIds({
+  id,
+  href,
+  connection,
+  hivePartitioning,
+  datetimeFilter,
+}: {
+  id: string;
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+  datetimeFilter?: [number, number];
+}): Promise<{ previous: string | null; next: string | null }> {
+  const source = `read_parquet('${href}', hive_partitioning = ${hivePartitioning})`;
+  const escapedId = id.replaceAll("'", "''");
+  const where = datetimeFilterToWhere(datetimeFilter, "other.datetime");
+  const adjacent = (comparison: "<" | ">", order: "ASC" | "DESC") => `(
+    SELECT other.id FROM ${source} AS other, current
+    WHERE (other.datetime ${comparison} current.datetime
+      OR (other.datetime = current.datetime AND other.id ${comparison} current.id))
+      AND ST_Intersects(other.geometry, current.geometry)
+      ${where ? `AND ${where}` : ""}
+    ORDER BY other.datetime ${order}, other.id ${order}
+    LIMIT 1
+  )`;
+  const query = `WITH current AS (
+    SELECT id, datetime, geometry FROM ${source} WHERE id = '${escapedId}'
+  )
+  SELECT ${adjacent("<", "DESC")} AS previous, ${adjacent(">", "ASC")} AS next`;
+  const result = (await connection.query(query)) as unknown as Table;
+  const row = result.toArray().map((row) => row.toJSON())[0];
+  return { previous: row?.previous ?? null, next: row?.next ?? null };
+}

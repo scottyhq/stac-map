@@ -1,4 +1,5 @@
 import {
+  useStacGeoparquetAdjacentIds,
   useStacGeoparquetItem,
   useStacGeoparquetValue,
   useStacValue,
@@ -12,6 +13,7 @@ import {
   Box,
   Button,
   HStack,
+  IconButton,
   Link,
   Portal,
   SkeletonText,
@@ -19,8 +21,14 @@ import {
   Stack,
 } from "@chakra-ui/react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { type ReactNode } from "react";
-import { LuBird, LuLoader, LuX } from "react-icons/lu";
+import { useEffect, type ReactNode } from "react";
+import {
+  LuBird,
+  LuChevronLeft,
+  LuChevronRight,
+  LuLoader,
+  LuX,
+} from "react-icons/lu";
 import { StacIcon } from "./ui/stac";
 import Value from "./value";
 
@@ -91,7 +99,31 @@ function StacGeoparquetItemPanel({
   id: string;
 }) {
   const result = useStacGeoparquetItem({ href, connection, id });
+  const adjacent = useStacGeoparquetAdjacentIds({ href, connection, id });
   const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
+  const stepStacGeoparquetId = useStore((store) => store.stepStacGeoparquetId);
+  const previous = adjacent.data?.previous;
+  const next = adjacent.data?.next;
+
+  // Left/right arrows step through time. Listen in the capture phase and stop
+  // the event so the map doesn't also pan.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+        return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.key === "ArrowLeft" ? previous : next;
+      if (step) stepStacGeoparquetId(step);
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [previous, next, stepStacGeoparquetId]);
+
   return result.data ? (
     <>
       <ValuePanel href={href} value={result.data} />
@@ -99,7 +131,27 @@ function StacGeoparquetItemPanel({
         <Portal>
           <ActionBar.Positioner>
             <ActionBar.Content>
+              <IconButton
+                variant={"outline"}
+                size={"sm"}
+                disabled={!previous}
+                onClick={() => previous && stepStacGeoparquetId(previous)}
+                aria-label={"Previous item in time"}
+                title={"Previous item in time (←)"}
+              >
+                <LuChevronLeft />
+              </IconButton>
               <ActionBar.SelectionTrigger>{id}</ActionBar.SelectionTrigger>
+              <IconButton
+                variant={"outline"}
+                size={"sm"}
+                disabled={!next}
+                onClick={() => next && stepStacGeoparquetId(next)}
+                aria-label={"Next item in time"}
+                title={"Next item in time (→)"}
+              >
+                <LuChevronRight />
+              </IconButton>
               <ActionBar.Separator />
               <Button
                 variant={"outline"}

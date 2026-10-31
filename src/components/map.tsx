@@ -1,6 +1,6 @@
 import { useStore, type BBox2D } from "@/store";
-import { resolveInitialBbox } from "@/utils/bbox";
-import { fitBoundsToBbox } from "@/utils/map";
+import { bboxesIntersect, resolveInitialBbox } from "@/utils/bbox";
+import { fitBoundsToBbox, getPaddedViewportBbox } from "@/utils/map";
 import { type DeckProps } from "@deck.gl/core";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { setWorkerUrl } from "maplibre-gl";
@@ -53,7 +53,13 @@ export default function Map({
       skipNextValueBboxRef.current = false;
       return;
     }
-    if (mapRef.current) fitBoundsToBbox(mapRef.current, valueBbox);
+    if (!mapRef.current) return;
+    if (useStore.getState().keepViewIfVisible) {
+      useStore.setState({ keepViewIfVisible: false });
+      const view = getPaddedViewportBbox(mapRef.current);
+      if (bboxesIntersect(valueBbox, view)) return;
+    }
+    fitBoundsToBbox(mapRef.current, valueBbox);
   }, [valueBbox]);
 
   return (
