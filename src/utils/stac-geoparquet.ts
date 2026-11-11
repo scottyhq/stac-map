@@ -353,3 +353,88 @@ export async function fetchStacGeoparquetItem({
   item.geometry = JSON.parse(item.geometry);
   return item;
 }
+
+/**
+ * Builds a SQL `WHERE` clause that keeps items whose `datetime` falls inside a
+ * datetime filter (milliseconds since the epoch).
+ */
+export function datetimeFilterToWhere(
+  filter: [number, number] | undefined,
+  column = "datetime"
+): string | undefined {
+  if (!filter) return undefined;
+  const start = new Date(filter[0]).toISOString();
+  const end = new Date(filter[1]).toISOString();
+  return `${column} BETWEEN TIMESTAMP '${start}' AND TIMESTAMP '${end}'`;
+}
+
+/** One item in a {@link fetchStacGeoparquetTimeline} result. */
+export interface TimelineEntry {
+  id: string;
+  /** The item's `datetime`, in milliseconds since the epoch. */
+  datetime: number;
+}
+
+/**
+ * Footprints count as "the same place" when their intersection covers at least
+ * this fraction of the smaller footprint. This keeps repeat acquisitions of a
+ * site (identical footprints, or partial-coverage footprints inside one tile)
+ * while dropping neighbouring sites or tiles that only share an edge strip.
+ */
+export const SAME_PLACE_OVERLAP = 0.8;
+
+/**
+ * Lists every item at the same place as `id` (including `id` itself; see
+ * {@link SAME_PLACE_OVERLAP}), ordered by datetime and then id. These are the
+ * time steps the datetime slider shows as ticks and the previous/next buttons
+ * step through.
+ */
+export async function fetchStacGeoparquetTimeline({
+  id,
+  href,
+  connection,
+  hivePartitioning,
+}: {
+  id: string;
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+}): Promise<TimelineEntry[]> {
+  const source = `read_parquet('${href}', hive_partitioning = ${hivePartitioning})`;
+  const escapedId = id.replaceAll("'", "''");
+  const query = `WITH current AS (
+    SELECT geometry FROM ${source} WHERE id = '${escapedId}' LIMIT 1
+  )
+  SELECT other.id AS id, epoch_ms(other.datetime) AS datetime_ms
+  FROM ${source} AS other, current
+  WHERE other.datetime IS NOT NULL
+    AND ST_Intersects(other.geometry, current.geometry)
+    AND ST_Area(ST_Intersection(other.geometry, current.geometry))
+      >= ${SAME_PLACE_OVERLAP} * LEAST(ST_Area(other.geometry), ST_Area(current.geometry))
+  ORDER BY other.datetime, other.id`;
+  const result = (await connection.query(query)) as unknown as Table;
+  return result
+    .toArray()
+    .map((row) => row.toJSON())
+    .map((row) => ({ id: String(row.id), datetime: Number(row.datetime_ms) }));
+}
+
+/**
+ * Finds the entries immediately before and after `id` in a timeline, skipping
+ * entries outside `datetimeFilter` (milliseconds since the epoch, inclusive).
+ */
+export function getAdjacentTimelineIds(
+  timeline: TimelineEntry[],
+  id: string,
+  datetimeFilter?: [number, number]
+): { previous: string | null; next: string | null } {
+  const index = timeline.findIndex((entry) => entry.id === id);
+  if (index === -1) return { previous: null, next: null };
+  const inFilter = (entry: TimelineEntry) =>
+    !datetimeFilter ||
+    (entry.datetime >= datetimeFilter[0] &&
+      entry.datetime <= datetimeFilter[1]);
+  const previous = timeline.slice(0, index).reverse().find(inFilter);
+  const next = timeline.slice(index + 1).find(inFilter);
+  return { previous: previous?.id ?? null, next: next?.id ?? null };
+}

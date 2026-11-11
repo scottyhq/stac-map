@@ -9,11 +9,12 @@ import {
 import {
   fetchStacGeoparquetItem,
   fetchStacGeoparquetTable,
+  fetchStacGeoparquetTimeline,
   fetchStacGeoparquetValue,
 } from "@/utils/stac-geoparquet";
 import { GeoTIFF } from "@developmentseed/geotiff";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { StacAsset } from "stac-ts";
 import { fetchQueryablesSchema, fetchStacValue } from "../utils/stac";
@@ -90,6 +91,39 @@ export function useStacGeoparquetItem({
     queryKey: ["stac-geoparquet-item", href, id],
     queryFn: async () =>
       fetchStacGeoparquetItem({ href, connection, hivePartitioning, id }),
+    // Keep showing the current item while stepping to the next one
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Items at the same place as `id` (see {@link fetchStacGeoparquetTimeline}).
+ * Pass `id: null` to disable the query.
+ */
+export function useStacGeoparquetTimeline({
+  href,
+  connection,
+  id,
+}: {
+  href: string | null;
+  connection: AsyncDuckDBConnection | null;
+  id: string | null;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: ["stac-geoparquet-timeline", href, id, hivePartitioning],
+    queryFn: async () =>
+      fetchStacGeoparquetTimeline({
+        href: href!,
+        connection: connection!,
+        hivePartitioning,
+        id: id!,
+      }),
+    enabled: !!href && !!connection && !!id,
+    // Stepping between items at the same place yields the same timeline, so
+    // keep showing the old ticks while the new one loads.
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
   });
 }
 

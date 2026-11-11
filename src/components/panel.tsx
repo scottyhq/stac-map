@@ -1,17 +1,20 @@
 import {
   useStacGeoparquetItem,
+  useStacGeoparquetTimeline,
   useStacGeoparquetValue,
   useStacValue,
 } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacValue } from "@/types/stac";
 import { getStacId } from "@/utils/stac";
+import { getAdjacentTimelineIds } from "@/utils/stac-geoparquet";
 import {
   ActionBar,
   Alert,
   Box,
   Button,
   HStack,
+  IconButton,
   Link,
   Portal,
   SkeletonText,
@@ -19,8 +22,15 @@ import {
   Stack,
 } from "@chakra-ui/react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { type ReactNode } from "react";
-import { LuBird, LuLoader, LuX } from "react-icons/lu";
+import { useEffect, useMemo, type ReactNode } from "react";
+import {
+  LuBird,
+  LuChevronLeft,
+  LuChevronRight,
+  LuLoader,
+  LuX,
+} from "react-icons/lu";
+import StacGeoparquet from "./stac-geoparquet";
 import { StacIcon } from "./ui/stac";
 import Value from "./value";
 
@@ -64,16 +74,21 @@ function StacGeoparquetHrefPanel({
   const result = useStacGeoparquetValue({ href, connection });
   const stacGeoparquetId = useStore((store) => store.stacGeoparquetId);
 
+  // The footprints (and with them the datetime slider) stay mounted while an
+  // item is selected, so you can keep scrubbing time and clicking footprints.
   return result.data ? (
-    stacGeoparquetId ? (
-      <StacGeoparquetItemPanel
-        href={href}
-        connection={connection}
-        id={stacGeoparquetId}
-      />
-    ) : (
-      <ValuePanel href={href} value={result.data} connection={connection} />
-    )
+    <>
+      <StacGeoparquet href={href} connection={connection} />
+      {stacGeoparquetId ? (
+        <StacGeoparquetItemPanel
+          href={href}
+          connection={connection}
+          id={stacGeoparquetId}
+        />
+      ) : (
+        <ValuePanel href={href} value={result.data} />
+      )}
+    </>
   ) : result.isLoading ? (
     <LoadingPanel href={href} />
   ) : (
@@ -91,7 +106,34 @@ function StacGeoparquetItemPanel({
   id: string;
 }) {
   const result = useStacGeoparquetItem({ href, connection, id });
+  const timeline = useStacGeoparquetTimeline({ href, connection, id });
+  const datetimeFilter = useStore((store) => store.datetimeFilters[href]);
   const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
+  const stepStacGeoparquetId = useStore((store) => store.stepStacGeoparquetId);
+  const { previous, next } = useMemo(
+    () => getAdjacentTimelineIds(timeline.data ?? [], id, datetimeFilter),
+    [timeline.data, id, datetimeFilter]
+  );
+
+  // Left/right arrows step through time. Listen in the capture phase and stop
+  // the event so the map doesn't also pan.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+        return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.key === "ArrowLeft" ? previous : next;
+      if (step) stepStacGeoparquetId(step);
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [previous, next, stepStacGeoparquetId]);
+
   return result.data ? (
     <>
       <ValuePanel href={href} value={result.data} />
@@ -99,7 +141,27 @@ function StacGeoparquetItemPanel({
         <Portal>
           <ActionBar.Positioner>
             <ActionBar.Content>
+              <IconButton
+                variant={"outline"}
+                size={"sm"}
+                disabled={!previous}
+                onClick={() => previous && stepStacGeoparquetId(previous)}
+                aria-label={"Previous item in time"}
+                title={"Previous item in time (←)"}
+              >
+                <LuChevronLeft />
+              </IconButton>
               <ActionBar.SelectionTrigger>{id}</ActionBar.SelectionTrigger>
+              <IconButton
+                variant={"outline"}
+                size={"sm"}
+                disabled={!next}
+                onClick={() => next && stepStacGeoparquetId(next)}
+                aria-label={"Next item in time"}
+                title={"Next item in time (→)"}
+              >
+                <LuChevronRight />
+              </IconButton>
               <ActionBar.Separator />
               <Button
                 variant={"outline"}
@@ -120,15 +182,7 @@ function StacGeoparquetItemPanel({
   );
 }
 
-function ValuePanel({
-  href,
-  value,
-  connection,
-}: {
-  href: string;
-  value: StacValue;
-  connection?: AsyncDuckDBConnection;
-}) {
+function ValuePanel({ href, value }: { href: string; value: StacValue }) {
   const header = (
     <PanelHeader icon={<StacIcon value={value} />}>
       {getStacId(value)}
@@ -136,7 +190,7 @@ function ValuePanel({
   );
   return (
     <BasePanel header={header}>
-      <Value href={href} value={value} connection={connection} />
+      <Value href={href} value={value} />
     </BasePanel>
   );
 }

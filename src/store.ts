@@ -48,6 +48,10 @@ export interface State {
   setUploadedFile: (uploadedFile: File) => void;
   stacGeoparquetId: string | null;
   setStacGeoparquetId: (id: string | null) => void;
+  /** Selects an item while stepping through time, keeping the map view if the item is visible. */
+  stepStacGeoparquetId: (id: string) => void;
+  /** One-shot: the next item only moves the map if it's outside the current view. */
+  keepViewIfVisible: boolean;
   connection: AsyncDuckDBConnection | null;
   setConnection: (connection: AsyncDuckDBConnection) => void;
   fillColor: Color;
@@ -120,7 +124,11 @@ export const useStore = create<State>()(
         get().setHref(uploadedFile.name);
       },
       stacGeoparquetId: null,
-      setStacGeoparquetId: (id) => set({ stacGeoparquetId: id }),
+      setStacGeoparquetId: (id) =>
+        set({ stacGeoparquetId: id, keepViewIfVisible: false }),
+      stepStacGeoparquetId: (id) =>
+        set({ stacGeoparquetId: id, keepViewIfVisible: true }),
+      keepViewIfVisible: false,
       connection: null,
       setConnection: (connection) => {
         set({ connection });
