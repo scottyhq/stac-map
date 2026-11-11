@@ -11,6 +11,7 @@ export default function DatetimeFilter() {
   const extents = useStore((store) => store.datetimeExtents);
   const filters = useStore((store) => store.datetimeFilters);
   const setFilter = useStore((store) => store.setDatetimeFilter);
+  const stepStacGeoparquetId = useStore((store) => store.stepStacGeoparquetId);
   const selected = useSelectedTimeline(href);
 
   const extent = useMemo<[number, number] | null>(() => {
@@ -64,6 +65,12 @@ export default function DatetimeFilter() {
             }}
             ticks={ticks}
             indicator={selected?.datetime}
+            onIndicatorChange={(datetime) => {
+              const entry = selected?.timeline.find(
+                (entry) => entry.datetime === datetime
+              );
+              if (entry) stepStacGeoparquetId(entry.id);
+            }}
           />
         </Box>
         <Text fontSize={"xs"}>{msToIsoLabel(shown[0])}</Text>
@@ -72,7 +79,7 @@ export default function DatetimeFilter() {
             gap={1}
             fontSize={"xs"}
             color={"orange.fg"}
-            title={`Selected item (${selected.index + 1} of ${selected.timeline.length} here). Step with ← / →.`}
+            title={`Selected item (${selected.index + 1} of ${selected.timeline.length} here). Step with ← / →, click a tick, or drag the orange marker.`}
           >
             <Box boxSize={"2"} rounded={"full"} bg={"orange.solid"} />
             <Text>{msToIsoLabel(selected.datetime)}</Text>
