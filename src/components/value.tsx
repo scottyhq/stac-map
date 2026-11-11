@@ -12,7 +12,6 @@ import {
 } from "@/utils/stac";
 import { Badge, Heading, HStack, Stack } from "@chakra-ui/react";
 import { GeoJsonLayer } from "@deck.gl/layers";
-import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import bbox from "@turf/bbox";
 import bboxPolygon from "@turf/bbox-polygon";
 import type { Feature, FeatureCollection, GeoJsonProperties } from "geojson";
@@ -28,7 +27,6 @@ import { ItemLinks } from "./items";
 import Links from "./links";
 import Properties from "./properties";
 import Search from "./search";
-import StacGeoparquet from "./stac-geoparquet";
 import Description from "./ui/description";
 import { WarningAlert } from "./ui/error-alert";
 import Thumbnail from "./ui/thumbnail";
@@ -37,11 +35,9 @@ import Visualization from "./visualization";
 export default function Value({
   href,
   value,
-  connection,
 }: {
   href: string;
   value: StacValue;
-  connection?: AsyncDuckDBConnection;
 }) {
   const lineColor = useStore((store) => store.lineColor);
   const setValueBbox = useStore((store) => store.setValueBbox);
@@ -147,10 +143,6 @@ export default function Value({
         {assets && <Assets assets={assets} />}
         {value.links && value.links.length > 0 && <Links links={value.links} />}
       </Stack>
-
-      {hrefIsParquet && connection && (
-        <StacGeoparquet href={href} connection={connection} />
-      )}
     </Stack>
   );
 }

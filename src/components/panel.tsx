@@ -1,12 +1,13 @@
 import {
-  useStacGeoparquetAdjacentIds,
   useStacGeoparquetItem,
+  useStacGeoparquetTimeline,
   useStacGeoparquetValue,
   useStacValue,
 } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacValue } from "@/types/stac";
 import { getStacId } from "@/utils/stac";
+import { getAdjacentTimelineIds } from "@/utils/stac-geoparquet";
 import {
   ActionBar,
   Alert,
@@ -21,7 +22,7 @@ import {
   Stack,
 } from "@chakra-ui/react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import {
   LuBird,
   LuChevronLeft,
@@ -29,6 +30,7 @@ import {
   LuLoader,
   LuX,
 } from "react-icons/lu";
+import StacGeoparquet from "./stac-geoparquet";
 import { StacIcon } from "./ui/stac";
 import Value from "./value";
 
@@ -72,16 +74,21 @@ function StacGeoparquetHrefPanel({
   const result = useStacGeoparquetValue({ href, connection });
   const stacGeoparquetId = useStore((store) => store.stacGeoparquetId);
 
+  // The footprints (and with them the datetime slider) stay mounted while an
+  // item is selected, so you can keep scrubbing time and clicking footprints.
   return result.data ? (
-    stacGeoparquetId ? (
-      <StacGeoparquetItemPanel
-        href={href}
-        connection={connection}
-        id={stacGeoparquetId}
-      />
-    ) : (
-      <ValuePanel href={href} value={result.data} connection={connection} />
-    )
+    <>
+      <StacGeoparquet href={href} connection={connection} />
+      {stacGeoparquetId ? (
+        <StacGeoparquetItemPanel
+          href={href}
+          connection={connection}
+          id={stacGeoparquetId}
+        />
+      ) : (
+        <ValuePanel href={href} value={result.data} />
+      )}
+    </>
   ) : result.isLoading ? (
     <LoadingPanel href={href} />
   ) : (
@@ -99,11 +106,14 @@ function StacGeoparquetItemPanel({
   id: string;
 }) {
   const result = useStacGeoparquetItem({ href, connection, id });
-  const adjacent = useStacGeoparquetAdjacentIds({ href, connection, id });
+  const timeline = useStacGeoparquetTimeline({ href, connection, id });
+  const datetimeFilter = useStore((store) => store.datetimeFilters[href]);
   const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
   const stepStacGeoparquetId = useStore((store) => store.stepStacGeoparquetId);
-  const previous = adjacent.data?.previous;
-  const next = adjacent.data?.next;
+  const { previous, next } = useMemo(
+    () => getAdjacentTimelineIds(timeline.data ?? [], id, datetimeFilter),
+    [timeline.data, id, datetimeFilter]
+  );
 
   // Left/right arrows step through time. Listen in the capture phase and stop
   // the event so the map doesn't also pan.
@@ -172,15 +182,7 @@ function StacGeoparquetItemPanel({
   );
 }
 
-function ValuePanel({
-  href,
-  value,
-  connection,
-}: {
-  href: string;
-  value: StacValue;
-  connection?: AsyncDuckDBConnection;
-}) {
+function ValuePanel({ href, value }: { href: string; value: StacValue }) {
   const header = (
     <PanelHeader icon={<StacIcon value={value} />}>
       {getStacId(value)}
@@ -188,7 +190,7 @@ function ValuePanel({
   );
   return (
     <BasePanel header={header}>
-      <Value href={href} value={value} connection={connection} />
+      <Value href={href} value={value} />
     </BasePanel>
   );
 }

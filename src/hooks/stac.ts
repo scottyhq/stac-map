@@ -8,9 +8,9 @@ import {
   type BandRange,
 } from "@/utils/single-band";
 import {
-  fetchStacGeoparquetAdjacentIds,
   fetchStacGeoparquetItem,
   fetchStacGeoparquetTable,
+  fetchStacGeoparquetTimeline,
   fetchStacGeoparquetValue,
 } from "@/utils/stac-geoparquet";
 import type { GeoTIFF } from "@developmentseed/geotiff";
@@ -97,32 +97,34 @@ export function useStacGeoparquetItem({
   });
 }
 
-export function useStacGeoparquetAdjacentIds({
+/**
+ * Items at the same place as `id` (see {@link fetchStacGeoparquetTimeline}).
+ * Pass `id: null` to disable the query.
+ */
+export function useStacGeoparquetTimeline({
   href,
   connection,
   id,
 }: {
-  href: string;
-  connection: AsyncDuckDBConnection;
-  id: string;
+  href: string | null;
+  connection: AsyncDuckDBConnection | null;
+  id: string | null;
 }) {
   const hivePartitioning = useStore((store) => store.hivePartitioning);
-  const datetimeFilter = useStore((store) => store.datetimeFilters[href]);
   return useQuery({
-    queryKey: [
-      "stac-geoparquet-adjacent-ids",
-      href,
-      id,
-      datetimeFilter ?? null,
-    ],
+    queryKey: ["stac-geoparquet-timeline", href, id, hivePartitioning],
     queryFn: async () =>
-      fetchStacGeoparquetAdjacentIds({
-        href,
-        connection,
+      fetchStacGeoparquetTimeline({
+        href: href!,
+        connection: connection!,
         hivePartitioning,
-        id,
-        datetimeFilter,
+        id: id!,
       }),
+    enabled: !!href && !!connection && !!id,
+    // Stepping between items at the same place yields the same timeline, so
+    // keep showing the old ticks while the new one loads.
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
   });
 }
 
