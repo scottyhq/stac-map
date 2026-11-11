@@ -16,7 +16,7 @@ import Section from "./ui/section";
 
 export default function Assets({ assets }: { assets: StacAssets }) {
   return (
-    <Section icon={<LuFileArchive />} title="Assets">
+    <Section icon={<LuFileArchive />} title="Assets" defaultOpen={false}>
       <Stack>
         {Object.entries(assets).map(([key, asset]) => (
           <AssetCard key={key} assetKey={key} asset={asset} />

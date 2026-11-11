@@ -6,14 +6,16 @@ export default function Section({
   icon,
   title,
   children,
+  defaultOpen = true,
 }: {
   icon: ReactNode;
   title: string;
   children: ReactNode;
+  defaultOpen?: boolean;
 }) {
   return (
     <Collapsible.Root
-      defaultOpen
+      defaultOpen={defaultOpen}
       borderTopWidth={"1px"}
       borderColor={"border.emphasized"}
     >

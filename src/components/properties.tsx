@@ -4,7 +4,11 @@ import { LuTableProperties } from "react-icons/lu";
 
 export default function Properties({ properties }: { properties: unknown }) {
   return (
-    <Section title="Properties" icon={<LuTableProperties />}>
+    <Section
+      title="Properties"
+      icon={<LuTableProperties />}
+      defaultOpen={false}
+    >
       <Json value={properties} />
     </Section>
   );
