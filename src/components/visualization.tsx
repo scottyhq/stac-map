@@ -1,8 +1,9 @@
 import { useGeoTIFF, useGeoTIFFBandRange } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacAssets, StacItemCollection } from "@/types/stac";
-import { loadGeoTIFF } from "@/utils/geotiff";
+import { createPixelSampler } from "@/utils/pixel-sampler";
 import {
+  isSingleBandGreyscale,
   resolveBandRange,
   singleBandPipeline,
   type SingleBandTileData,
@@ -17,10 +18,10 @@ import {
 } from "@chakra-ui/react";
 import {
   COGLayer,
+  COGSource,
   MosaicLayer,
-  type MosaicSource,
+  type MosaicItem,
 } from "@developmentseed/deck.gl-geotiff";
-import { epsgResolver } from "@developmentseed/proj";
 import { useEffect, useMemo, useState } from "react";
 import { LuEye, LuEyeOff } from "react-icons/lu";
 import type { StacAsset, StacItem, StacLink } from "stac-ts";
@@ -135,6 +136,23 @@ export default function Visualization({
     asset: selectedAsset,
   });
 
+  // One sampler per GeoTIFF, so tiles it has collected survive layer updates
+  // such as a new band range.
+  const pixelSampler = useMemo(
+    () =>
+      selectedCogGeotiff && isSingleBandGreyscale(selectedCogGeotiff)
+        ? createPixelSampler(selectedCogGeotiff)
+        : undefined,
+    [selectedCogGeotiff]
+  );
+  const setPixelSampler = useStore((store) => store.setPixelSampler);
+
+  useEffect(() => {
+    if (!enabled || !selected?.startsWith("asset:") || !pixelSampler) return;
+    setPixelSampler(pixelSampler);
+    return () => setPixelSampler(null);
+  }, [enabled, selected, pixelSampler, setPixelSampler]);
+
   useEffect(() => {
     if (!enabled || !selected) return;
     if (selected.startsWith("items:")) return;
@@ -148,12 +166,18 @@ export default function Visualization({
         pipeline
           ? new COGLayer<SingleBandTileData>({
               id: layerId,
-              geotiff: selectedCogGeotiff,
+              source: selectedCogGeotiff,
               ...pipeline,
+              onTileLoad: (tile) => {
+                if (tile.content) pixelSampler?.add(tile.content);
+              },
+              onTileUnload: (tile) => {
+                if (tile.content) pixelSampler?.remove(tile.content);
+              },
             })
           : new COGLayer({
               id: layerId,
-              geotiff: selectedCogGeotiff,
+              source: selectedCogGeotiff,
             })
       );
       return () => setLayer(layerId, undefined);
@@ -194,6 +218,7 @@ export default function Visualization({
     selected,
     selectedCogGeotiff,
     bandRange,
+    pixelSampler,
     tilejsonLink,
     wmtsLink,
     setLayer,
@@ -259,6 +284,9 @@ export default function Visualization({
   );
 }
 
+type MosaicStacItem = StacItem &
+  MosaicItem & { id: string; assets: { cog: StacAsset } };
+
 function PageLayer({
   page,
   pageIndex,
@@ -269,7 +297,7 @@ function PageLayer({
   assetKey: string;
 }) {
   const setLayer = useStore((store) => store.setLayer);
-  const sources = useMemo(() => {
+  const items = useMemo(() => {
     return (page?.features ?? [])
       .map((item) => {
         item.bbox = item.bbox && (sanitizeBbox(item.bbox) as number[]);
@@ -279,47 +307,39 @@ function PageLayer({
         return item;
       })
       .filter(
-        (item): item is StacItem & MosaicSource =>
-          !!item.bbox && !!item.assets.cog
+        (item): item is MosaicStacItem => !!item.bbox && !!item.assets.cog
       );
   }, [page, assetKey]);
 
   useEffect(() => {
     const id = `visualization-page-${pageIndex}-${assetKey}`;
-    if (sources.length === 0) {
+    if (items.length === 0) {
       setLayer(id, undefined);
       return;
     }
     setLayer(
       id,
-      new MosaicLayer({
+      new MosaicLayer<MosaicStacItem, COGSource>({
         id,
-        sources,
-        getSource: async (source) => loadGeoTIFF(source.assets.cog.href),
-        renderSource: (source, { data, signal }) => {
-          if (!data) return null;
-          const href = source.assets.cog.href;
-          const range = resolveBandRange(source.assets[assetKey], data);
-          const pipeline = singleBandPipeline(data, range);
+        data: items,
+        getSource: (item, options) =>
+          COGSource.open(item.assets.cog.href, options),
+        renderSource: (item, { source, subLayerProps }) => {
+          if (!source) return null;
+          const range = resolveBandRange(item.assets[assetKey], source.geotiff);
+          const pipeline = singleBandPipeline(source.geotiff, range);
           return pipeline
             ? new COGLayer<SingleBandTileData>({
-                id: `cog-${href}`,
-                epsgResolver,
-                geotiff: data,
-                signal,
+                ...subLayerProps,
+                source,
                 ...pipeline,
               })
-            : new COGLayer({
-                id: `cog-${href}`,
-                epsgResolver,
-                geotiff: data,
-                signal,
-              });
+            : new COGLayer({ ...subLayerProps, source });
         },
       })
     );
     return () => setLayer(id, undefined);
-  }, [sources, pageIndex, assetKey, setLayer]);
+  }, [items, pageIndex, assetKey, setLayer]);
 
   return null;
 }

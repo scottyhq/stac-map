@@ -13,6 +13,7 @@ concurrency:
 jobs:
   build:
     name: Build
+    if: github.repository == 'developmentseed/stac-map'
     runs-on: ubuntu-latest
     permissions:
       contents: read

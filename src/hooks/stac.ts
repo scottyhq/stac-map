@@ -1,6 +1,5 @@
 import { useStore } from "@/store";
 import { loadCql2Wasm } from "@/utils/cql2-wasm";
-import { loadGeoTIFF } from "@/utils/geotiff";
 import {
   computeBandRangeFromOverview,
   isSingleBandGreyscale,
@@ -13,7 +12,7 @@ import {
   fetchStacGeoparquetTimeline,
   fetchStacGeoparquetValue,
 } from "@/utils/stac-geoparquet";
-import type { GeoTIFF } from "@developmentseed/geotiff";
+import { GeoTIFF } from "@developmentseed/geotiff";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -131,7 +130,7 @@ export function useStacGeoparquetTimeline({
 export function useGeoTIFF(href: string | undefined) {
   return useQuery({
     queryKey: ["geotiff", href],
-    queryFn: async () => loadGeoTIFF(href!),
+    queryFn: ({ signal }) => GeoTIFF.fromUrl(href!, { signal }),
     enabled: !!href,
     staleTime: Infinity,
     gcTime: Infinity,

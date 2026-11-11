@@ -63,10 +63,15 @@ export async function fetchStacGeoparquetValue({
     connection,
     hivePartitioning,
   });
+  const collection = await fetchStacGeoparquetCollection({ href, connection });
+  const countDescription = `A stac-geoparquet file with ${count} item${count === 1 ? "" : "s"}`;
   return {
     type: "FeatureCollection",
     id: href.split("/").pop(),
-    description: `A stac-geoparquet file with ${count} item${count === 1 ? "" : "s"}`,
+    title: collection?.title,
+    description: collection?.description
+      ? `${collection.description}\n\n${countDescription}.`
+      : countDescription,
     bbox,
     features: [],
     datetimeExtent,
@@ -77,6 +82,32 @@ export async function fetchStacGeoparquetValue({
       },
     },
   };
+}
+
+/**
+ * Read the STAC Collection embedded in the file's key-value metadata, per the
+ * stac-geoparquet spec (key "stac-geoparquet", value `{version, collections}`).
+ * Returns the Collection only when the file holds exactly one; otherwise null.
+ */
+async function fetchStacGeoparquetCollection({
+  href,
+  connection,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+}): Promise<{ title?: string; description?: string } | null> {
+  try {
+    const query = `SELECT decode(value) AS value FROM parquet_kv_metadata('${href}') WHERE decode(key) = 'stac-geoparquet' LIMIT 1`;
+    const result = (await connection.query(query)) as unknown as Table;
+    const row = result.toArray().map((row) => row.toJSON())[0];
+    if (!row?.value) return null;
+    const collections = Object.values(
+      JSON.parse(row.value as string).collections ?? {}
+    ) as { title?: string; description?: string }[];
+    return collections.length === 1 ? collections[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchStacGeoparquetSummary({

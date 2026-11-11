@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.repository == 'developmentseed/stac-map'
     runs-on: ubuntu-latest
     environment: release
     steps:
