@@ -14,6 +14,7 @@ import {
   parseMultiPolygonWkb,
   type MultiPolygonData,
 } from "./custom-wkb-parser";
+import { resolveParquetSource } from "./parquet-cache";
 import { loadStacWasm } from "./stac-wasm";
 
 const SUPPORTED_GEOMETRY_TYPES = [
@@ -36,12 +37,24 @@ async function executeDuckdbQuery({
   where?: string;
   hivePartitioning: boolean;
 }): Promise<Table> {
-  let query = `SELECT ${select} FROM read_parquet('${href}', hive_partitioning = ${hivePartitioning})`;
+  const source = await readParquetSql(connection, href, hivePartitioning);
+  let query = `SELECT ${select} FROM ${source}`;
   if (where) {
     query += ` WHERE ${where}`;
   }
   return (await connection.query(query)) as unknown as Table;
 }
+
+/** The `read_parquet(...)` call for `href`, reading a cached copy if there is one. */
+async function readParquetSql(
+  connection: AsyncDuckDBConnection,
+  href: string,
+  hivePartitioning: boolean
+): Promise<string> {
+  const source = await resolveParquetSource(connection, href, hivePartitioning);
+  return `read_parquet('${source}', hive_partitioning = ${hivePartitioning})`;
+}
+
 export type SupportedGeometryType = (typeof SUPPORTED_GEOMETRY_TYPES)[number];
 
 export async function fetchStacGeoparquetValue({
@@ -63,7 +76,11 @@ export async function fetchStacGeoparquetValue({
     connection,
     hivePartitioning,
   });
-  const collection = await fetchStacGeoparquetCollection({ href, connection });
+  const collection = await fetchStacGeoparquetCollection({
+    href,
+    connection,
+    hivePartitioning,
+  });
   const countDescription = `A stac-geoparquet file with ${count} item${count === 1 ? "" : "s"}`;
   return {
     type: "FeatureCollection",
@@ -92,12 +109,19 @@ export async function fetchStacGeoparquetValue({
 async function fetchStacGeoparquetCollection({
   href,
   connection,
+  hivePartitioning,
 }: {
   href: string;
   connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
 }): Promise<{ title?: string; description?: string } | null> {
   try {
-    const query = `SELECT decode(value) AS value FROM parquet_kv_metadata('${href}') WHERE decode(key) = 'stac-geoparquet' LIMIT 1`;
+    const source = await resolveParquetSource(
+      connection,
+      href,
+      hivePartitioning
+    );
+    const query = `SELECT decode(value) AS value FROM parquet_kv_metadata('${source}') WHERE decode(key) = 'stac-geoparquet' LIMIT 1`;
     const result = (await connection.query(query)) as unknown as Table;
     const row = result.toArray().map((row) => row.toJSON())[0];
     if (!row?.value) return null;
@@ -193,7 +217,8 @@ async function getBboxColumnType({
   hivePartitioning: boolean;
 }): Promise<string | null> {
   try {
-    const query = `SELECT typeof(bbox) as bbox_type FROM read_parquet('${href}', hive_partitioning = ${hivePartitioning}) LIMIT 1`;
+    const source = await readParquetSql(connection, href, hivePartitioning);
+    const query = `SELECT typeof(bbox) as bbox_type FROM ${source} LIMIT 1`;
     const result = (await connection.query(query)) as unknown as Table;
     const row = result.toArray().map((row) => row.toJSON())[0];
     return (row?.bbox_type as string | undefined) ?? null;
@@ -400,7 +425,7 @@ export async function fetchStacGeoparquetTimeline({
   connection: AsyncDuckDBConnection;
   hivePartitioning: boolean;
 }): Promise<TimelineEntry[]> {
-  const source = `read_parquet('${href}', hive_partitioning = ${hivePartitioning})`;
+  const source = await readParquetSql(connection, href, hivePartitioning);
   const escapedId = id.replaceAll("'", "''");
   const query = `WITH current AS (
     SELECT geometry FROM ${source} WHERE id = '${escapedId}' LIMIT 1
