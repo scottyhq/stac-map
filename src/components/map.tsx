@@ -14,6 +14,7 @@ import {
   useControl,
 } from "react-map-gl/maplibre";
 import { useColorModeValue } from "../components/ui/color-mode";
+import PixelValueTooltip from "./pixel-value-tooltip";
 import type { ExtraLayerProps } from "./stac-map";
 
 setWorkerUrl(workerUrl);
@@ -85,6 +86,7 @@ export default function Map({
         layers={Object.values(layers)}
         getCursor={(props) => getCursor(mapRef, props)}
       ></DeckGLOverlay>
+      <PixelValueTooltip />
       {Object.values(maplibreLayers).map((layer, i) => (
         <Source key={"maplibre-layer-" + i} {...layer.source}>
           <MaplibreLayer {...layer.layer} />

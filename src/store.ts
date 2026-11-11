@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ExtraLayerProps } from "./components/stac-map";
 import type { QueryableFilter } from "./utils/cql2";
+import type { PixelSampler } from "./utils/pixel-sampler";
 
 export type Color = [number, number, number, number];
 export type Projection = "mercator" | "globe";
@@ -89,6 +90,9 @@ export interface State {
   setHivePartitioning: (hivePartitioning: boolean) => void;
   visualization: string | null;
   setVisualization: (visualization: string | null) => void;
+  /** Samples the visualized single-band COG under the cursor, if any. */
+  pixelSampler: PixelSampler | null;
+  setPixelSampler: (pixelSampler: PixelSampler | null) => void;
   bookmarks: Bookmark[];
   addBookmark: (href: string) => void;
   removeBookmark: (href: string) => void;
@@ -168,6 +172,8 @@ export const useStore = create<State>()(
       setHivePartitioning: (hivePartitioning) => set({ hivePartitioning }),
       visualization: null,
       setVisualization: (visualization) => set({ visualization }),
+      pixelSampler: null,
+      setPixelSampler: (pixelSampler) => set({ pixelSampler }),
       bookmarks: [],
       addBookmark: (href) => {
         if (get().bookmarks.some((bookmark) => bookmark.href === href)) return;
