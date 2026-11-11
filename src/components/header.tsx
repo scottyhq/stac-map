@@ -27,7 +27,7 @@ export default function Header() {
       {examples.length > 0 && (
         <Examples>
           <Button bg={"bg.muted/90"} variant={"surface"}>
-            Examples
+            Collections
           </Button>
         </Examples>
       )}
