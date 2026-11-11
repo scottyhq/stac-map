@@ -1,5 +1,38 @@
 # stac-map
 
+> [!IMPORTANT]
+> **This is a personal demo fork.** Development happens upstream at
+> [developmentseed/stac-map](https://github.com/developmentseed/stac-map), and
+> that is where issues, discussion, and pull requests belong. This fork is not
+> maintained as a separate project and may be rebased, rewritten, or deleted at
+> any time.
+
+The fork is deployed at <https://scottyhq.github.io/stac-map/> to demo a few
+experimental features, here showing a GRIMP Sentinel-1 mosaic of Greenland
+read from a stac-geoparquet index:
+
+![stac-map fork showing a single-band COG with a viridis colormap, a value read on hover, the datetime slider with the selected item marked, and previous/next buttons](screenshot.png)
+
+Features added compared to upstream:
+
+- **Pixel values on hover** for single-band COGs. Values are marked
+  approximate (≈) while a lower-resolution overview is showing.
+- **Colormaps for single-band COGs**: a colormap picker with a reverse toggle,
+  linear or log scaling, editable min/max, and a legend.
+- **Stepping through stac-geoparquet items in time**: previous/next buttons
+  (and ←/→ keys) move to the next or previous item covering the same place.
+  The map view stays put while you step.
+- **The datetime slider stays visible while an item is selected**, with the
+  selected item's date and a tick for every item at that place marked on it.
+- **Collection title and description from stac-geoparquet metadata**, read
+  from the STAC Collection that writers such as rustac embed in the file.
+- deck.gl-raster upgraded to 0.10.
+
+Some of these may be proposed upstream. Everything below is the upstream
+README.
+
+---
+
 [![CI status](https://img.shields.io/github/actions/workflow/status/developmentseed/stac-map/ci.yaml?style=for-the-badge&label=CI)](https://github.com/developmentseed/stac-map/actions/workflows/ci.yaml)
 [![GitHub deployments](https://img.shields.io/github/deployments/developmentseed/stac-map/github-pages?style=for-the-badge&label=Deploy)](https://github.com/developmentseed/stac-map/deployments/github-pages)
 [![GitHub Release](https://img.shields.io/github/v/release/developmentseed/stac-map?style=for-the-badge)](https://github.com/developmentseed/stac-map/releases)
