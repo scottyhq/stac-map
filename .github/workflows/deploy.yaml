@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build:
     name: Build
-    if: github.repository == 'developmentseed/stac-map'
+    if: github.repository == 'developmentseed/stac-map' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
