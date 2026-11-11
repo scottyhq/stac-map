@@ -16,9 +16,13 @@ afterEach(() => {
   cleanup = null;
 });
 
-async function renderSlider() {
+async function renderSlider({
+  indicator = 10,
+  vertical = false,
+}: { indicator?: number; vertical?: boolean } = {}) {
   const container = document.createElement("div");
   container.style.width = "400px";
+  if (vertical) container.style.height = "400px";
   container.style.padding = "40px";
   document.body.appendChild(container);
   const onIndicatorChange = vi.fn();
@@ -38,7 +42,8 @@ async function renderSlider() {
             { value: 70 },
             { value: 90, inRange: false },
           ]}
-          indicator={10}
+          indicator={indicator}
+          orientation={vertical ? "vertical" : "horizontal"}
           onIndicatorChange={onIndicatorChange}
         />
       </ChakraProvider>
@@ -127,3 +132,47 @@ test("thumbs still drag", async () => {
   expect(start).toBe(0);
   expect(end).toBeLessThan(80);
 });
+
+for (const vertical of [false, true]) {
+  const orientation = vertical ? "vertical" : "horizontal";
+
+  test(`${orientation}: the marker can be dragged off a thumb it sits on`, async () => {
+    const { container, onIndicatorChange, onChangeEnd, tick } =
+      await renderSlider({ indicator: 80, vertical });
+    const indicator = container.querySelector<HTMLElement>(
+      "[data-testid='datetime-slider-indicator']"
+    )!;
+    await userEvent.dragAndDrop(indicator, tick(50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onIndicatorChange).toHaveBeenLastCalledWith(50);
+    expect(onChangeEnd).not.toHaveBeenCalled();
+  });
+
+  test(`${orientation}: a thumb at the same datetime as the marker still drags`, async () => {
+    const { container, onChangeEnd } = await renderSlider({
+      indicator: 80,
+      vertical,
+    });
+    const thumb = container.querySelectorAll<HTMLElement>(
+      "[data-part='thumb']"
+    )[1];
+    // Nothing covers the thumb, so it's grabbed at its center
+    await userEvent.dragAndDrop(
+      thumb,
+      container.querySelector<HTMLElement>("[data-tick-value='50']")!
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onChangeEnd).toHaveBeenCalled();
+  });
+
+  test(`${orientation}: pressing the bare track doesn't move a thumb`, async () => {
+    const { container, onChangeEnd } = await renderSlider({ vertical });
+    const track = container.querySelector<HTMLElement>("[data-part='track']")!;
+    const rect = track.getBoundingClientRect();
+    await userEvent.click(track, {
+      position: { x: rect.width / 2, y: rect.height * 0.4 },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onChangeEnd).not.toHaveBeenCalled();
+  });
+}

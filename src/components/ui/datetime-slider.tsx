@@ -145,7 +145,12 @@ export default function DatetimeSlider({
           <Slider.Range />
         </Slider.Track>
         {((ticks && ticks.length > 0) || showIndicator) && (
-          <Slider.MarkerGroup pointerEvents={"none"}>
+          <Slider.MarkerGroup
+            pointerEvents={"none"}
+            // Above the thumbs (z-index 2), so a thumb's edge never covers the
+            // marker or ticks beside the track
+            zIndex={pickable ? 3 : undefined}
+          >
             {ticks
               ?.filter((tick) => tick.value >= min && tick.value <= max)
               .map((tick, i) => (
@@ -178,13 +183,16 @@ export default function DatetimeSlider({
                 <Slider.MarkerIndicator
                   data-testid={"datetime-slider-indicator"}
                   boxSize={"3"}
-                  {...(vertical ? { ms: "-1" } : { mt: "-1" })}
+                  // In the tick lane beside the track, clear of the range thumbs
+                  {...(vertical ? { ms: "-20px" } : { mt: "-20px" })}
                   bg={indicatorInRange ? "orange.solid" : "bg"}
                   borderWidth={"2px"}
                   borderColor={"orange.solid"}
                   shadow={"sm"}
                   {...(pickable && {
                     ...pickStyle,
+                    // No enlarged hit area, which would reach over the thumbs
+                    _before: undefined,
                     onPointerDown: startPick,
                     onPointerMove: movePick,
                     onPointerUp: endPick,
