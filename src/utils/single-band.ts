@@ -19,6 +19,7 @@ import {
   LogRescale,
   type ColormapName,
 } from "./colormap";
+import type { SampledTile } from "./pixel-sampler";
 
 export type BandRange = { min: number; max: number };
 
@@ -98,7 +99,7 @@ export function renderTileTriggers(
   return [range?.min, range?.max, style.colormap, style.reversed, style.scale];
 }
 
-export type SingleBandTileData = {
+export type SingleBandTileData = SampledTile & {
   texture: Texture;
   mask?: Texture;
   colormapTexture: Texture;
@@ -148,7 +149,8 @@ export function singleBandPipeline(
       height,
       sampler: { minFilter: "nearest", magFilter: "nearest" },
     });
-    let byteLength = data.byteLength;
+    // The values stay on the CPU too so the pixel sampler can read them.
+    let byteLength = data.byteLength * 2;
     let maskTexture: Texture | undefined;
     if (mask) {
       maskTexture = device.createTexture({
@@ -158,7 +160,7 @@ export function singleBandPipeline(
         height,
         sampler: { minFilter: "nearest", magFilter: "nearest" },
       });
-      byteLength += mask.byteLength;
+      byteLength += mask.byteLength * 2;
     }
     return {
       texture,
@@ -167,6 +169,11 @@ export function singleBandPipeline(
       byteLength,
       width,
       height,
+      image,
+      x,
+      y,
+      values: data,
+      validMask: mask,
     };
   };
 

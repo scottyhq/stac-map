@@ -23,3 +23,8 @@ export function clampToGlobalExtents(bbox: BBox2D): BBox2D {
     Math.min(bbox[3], 90),
   ];
 }
+
+export function bboxesIntersect(a: BBox2D, b: BBox2D): boolean {
+  if (a[2] - a[0] >= 360 || b[2] - b[0] >= 360) return true;
+  return !(a[0] > b[2] || a[1] > b[3] || a[2] < b[0] || a[3] < b[1]);
+}

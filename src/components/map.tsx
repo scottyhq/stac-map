@@ -1,6 +1,6 @@
 import { useStore, type BBox2D } from "@/store";
-import { resolveInitialBbox } from "@/utils/bbox";
-import { fitBoundsToBbox } from "@/utils/map";
+import { bboxesIntersect, resolveInitialBbox } from "@/utils/bbox";
+import { fitBoundsToBbox, getPaddedViewportBbox } from "@/utils/map";
 import { type DeckProps } from "@deck.gl/core";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { setWorkerUrl } from "maplibre-gl";
@@ -14,6 +14,7 @@ import {
   useControl,
 } from "react-map-gl/maplibre";
 import { useColorModeValue } from "../components/ui/color-mode";
+import PixelValueTooltip from "./pixel-value-tooltip";
 import type { ExtraLayerProps } from "./stac-map";
 
 setWorkerUrl(workerUrl);
@@ -53,7 +54,13 @@ export default function Map({
       skipNextValueBboxRef.current = false;
       return;
     }
-    if (mapRef.current) fitBoundsToBbox(mapRef.current, valueBbox);
+    if (!mapRef.current) return;
+    if (useStore.getState().keepViewIfVisible) {
+      useStore.setState({ keepViewIfVisible: false });
+      const view = getPaddedViewportBbox(mapRef.current);
+      if (bboxesIntersect(valueBbox, view)) return;
+    }
+    fitBoundsToBbox(mapRef.current, valueBbox);
   }, [valueBbox]);
 
   return (
@@ -85,6 +92,7 @@ export default function Map({
         layers={Object.values(layers)}
         getCursor={(props) => getCursor(mapRef, props)}
       ></DeckGLOverlay>
+      <PixelValueTooltip />
       {Object.values(maplibreLayers).map((layer, i) => (
         <Source key={"maplibre-layer-" + i} {...layer.source}>
           <MaplibreLayer {...layer.layer} />

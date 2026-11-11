@@ -1,6 +1,13 @@
-import { useStacGeoparquetTable, useStacGeoparquetValue } from "@/hooks/stac";
+import {
+  useStacGeoparquetTable,
+  useStacGeoparquetTimeline,
+  useStacGeoparquetValue,
+} from "@/hooks/stac";
 import { useStore } from "@/store";
-import type { SupportedGeometryType } from "@/utils/stac-geoparquet";
+import {
+  datetimeFilterToWhere,
+  type SupportedGeometryType,
+} from "@/utils/stac-geoparquet";
 import type { Color } from "@deck.gl/core";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import {
@@ -9,7 +16,7 @@ import {
   GeoArrowScatterplotLayer,
 } from "@geoarrow/deck.gl-layers";
 import type { Table } from "apache-arrow";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorAlert } from "./ui/error-alert";
 
 export default function StacGeoparquet({
@@ -30,12 +37,28 @@ export default function StacGeoparquet({
     return () => setDatetimeExtent("geoparquet", null);
   }, [datetimeExtent, setDatetimeExtent]);
 
-  const where = useMemo(() => {
-    if (!datetimeFilter) return undefined;
-    const start = new Date(datetimeFilter[0]).toISOString();
-    const end = new Date(datetimeFilter[1]).toISOString();
-    return `datetime BETWEEN TIMESTAMP '${start}' AND TIMESTAMP '${end}'`;
-  }, [datetimeFilter]);
+  const where = useMemo(
+    () => datetimeFilterToWhere(datetimeFilter),
+    [datetimeFilter]
+  );
+
+  // While an item is selected, its footprint and every footprint stacked on it
+  // (the same place at other times) sit under the item's raster. Ignore those
+  // for hover and click so clicking the image doesn't jump to an arbitrary
+  // time; use the slider or arrow keys to step instead.
+  const stacGeoparquetId = useStore((store) => store.stacGeoparquetId);
+  const timeline = useStacGeoparquetTimeline({
+    href,
+    connection,
+    id: stacGeoparquetId,
+  });
+  const ignoredIds = useMemo(() => {
+    if (!stacGeoparquetId) return EMPTY_IDS;
+    const ids = new Set([stacGeoparquetId]);
+    if (timeline.data?.some((entry) => entry.id === stacGeoparquetId))
+      for (const entry of timeline.data) ids.add(entry.id);
+    return ids;
+  }, [stacGeoparquetId, timeline.data]);
 
   const result = useStacGeoparquetTable({ href, connection, where });
   if (result.error)
@@ -45,19 +68,32 @@ export default function StacGeoparquet({
     <StacGeoparquetTable
       table={result.data.table}
       geometryType={result.data.geometryType}
+      ignoredIds={ignoredIds}
     />
   );
 }
 
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
 function StacGeoparquetTable({
   table,
   geometryType,
+  ignoredIds,
 }: {
   table: Table;
   geometryType: SupportedGeometryType;
+  ignoredIds: ReadonlySet<string>;
 }) {
-  const [hovered, setHovered] = useState<string>();
-  const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
+  const [hoveredId, setHovered] = useState<string>();
+  const hovered =
+    hoveredId && !ignoredIds.has(hoveredId) ? hoveredId : undefined;
+  const selectId = useStore((store) => store.setStacGeoparquetId);
+  const setStacGeoparquetId = useCallback(
+    (id: string | undefined) => {
+      if (id && !ignoredIds.has(id)) selectId(id);
+    },
+    [ignoredIds, selectId]
+  );
   const setLayer = useStore((store) => store.setLayer);
   const lineColor = useStore((store) => store.lineColor);
   const fillColor = useStore((store) => store.fillColor);

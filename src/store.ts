@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ExtraLayerProps } from "./components/stac-map";
 import type { QueryableFilter } from "./utils/cql2";
+import type { PixelSampler } from "./utils/pixel-sampler";
 import {
   DEFAULT_RASTER_STYLE,
   type BandRange,
@@ -52,6 +53,10 @@ export interface State {
   setUploadedFile: (uploadedFile: File) => void;
   stacGeoparquetId: string | null;
   setStacGeoparquetId: (id: string | null) => void;
+  /** Selects an item while stepping through time, keeping the map view if the item is visible. */
+  stepStacGeoparquetId: (id: string) => void;
+  /** One-shot: the next item only moves the map if it's outside the current view. */
+  keepViewIfVisible: boolean;
   connection: AsyncDuckDBConnection | null;
   setConnection: (connection: AsyncDuckDBConnection) => void;
   fillColor: Color;
@@ -103,6 +108,9 @@ export interface State {
    */
   rasterRange: BandRange | null;
   setRasterRange: (range: BandRange | null) => void;
+  /** Samples the visualized single-band COG under the cursor, if any. */
+  pixelSampler: PixelSampler | null;
+  setPixelSampler: (pixelSampler: PixelSampler | null) => void;
   bookmarks: Bookmark[];
   addBookmark: (href: string) => void;
   removeBookmark: (href: string) => void;
@@ -130,7 +138,11 @@ export const useStore = create<State>()(
         get().setHref(uploadedFile.name);
       },
       stacGeoparquetId: null,
-      setStacGeoparquetId: (id) => set({ stacGeoparquetId: id }),
+      setStacGeoparquetId: (id) =>
+        set({ stacGeoparquetId: id, keepViewIfVisible: false }),
+      stepStacGeoparquetId: (id) =>
+        set({ stacGeoparquetId: id, keepViewIfVisible: true }),
+      keepViewIfVisible: false,
       connection: null,
       setConnection: (connection) => {
         set({ connection });
@@ -190,6 +202,8 @@ export const useStore = create<State>()(
         set({ rasterStyle: { ...get().rasterStyle, ...style } }),
       rasterRange: null,
       setRasterRange: (rasterRange) => set({ rasterRange }),
+      pixelSampler: null,
+      setPixelSampler: (pixelSampler) => set({ pixelSampler }),
       bookmarks: [],
       addBookmark: (href) => {
         if (get().bookmarks.some((bookmark) => bookmark.href === href)) return;
