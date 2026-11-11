@@ -17,8 +17,16 @@ const HEIRARCHICAL_LINKS = [
   "previous",
 ];
 
-export default function Links({ links }: { links: StacLink[] }) {
+export default function Links({
+  links,
+  isStacGeoparquetItem = false,
+}: {
+  links: StacLink[];
+  /** For a stac-geoparquet item, "collection" clears the item selection. */
+  isStacGeoparquetItem?: boolean;
+}) {
   const setHref = useStore((store) => store.setHref);
+  const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
 
   return (
     <Section icon={<LuLink2 />} title="Links">
@@ -38,7 +46,11 @@ export default function Links({ links }: { links: StacLink[] }) {
                   isHierarchical
                     ? (e) => {
                         e.preventDefault();
-                        setHref(link.href);
+                        if (isStacGeoparquetItem && link.rel === "collection") {
+                          setStacGeoparquetId(null);
+                        } else {
+                          setHref(link.href);
+                        }
                       }
                     : undefined
                 }

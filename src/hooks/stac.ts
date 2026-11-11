@@ -165,3 +165,14 @@ export function useGeoTIFFBandRange({
     [raw?.min, raw?.max]
   );
 }
+
+/**
+ * True when `value` is an item selected from the loaded stac-geoparquet file.
+ * Its collection is the file itself, so "collection" navigation should clear
+ * the selection instead of following the item's link href.
+ */
+export function useIsStacGeoparquetItem(value: { type?: unknown }) {
+  const hrefIsParquet = useStore((store) => store.hrefIsParquet);
+  const stacGeoparquetId = useStore((store) => store.stacGeoparquetId);
+  return hrefIsParquet && !!stacGeoparquetId && value.type === "Feature";
+}

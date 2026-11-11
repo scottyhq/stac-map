@@ -1,33 +1,23 @@
 import { StacIcon } from "@/components/ui/stac";
-import { useStacGeoparquetValue, useStacValue } from "@/hooks/stac";
+import { useIsStacGeoparquetItem, useStacValue } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacValue } from "@/types/stac";
 import { getLink, getStacTitle, getStacType } from "@/utils/stac";
 import { Breadcrumb, HStack } from "@chakra-ui/react";
-import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { useMemo } from "react";
 import type { StacLink } from "stac-ts";
 
 export default function Breadcrumbs({ value }: { value: StacValue }) {
-  const href = useStore((store) => store.href);
-  const hrefIsParquet = useStore((store) => store.hrefIsParquet);
-  const stacGeoparquetId = useStore((store) => store.stacGeoparquetId);
-  const connection = useStore((store) => store.connection);
-
   // An item selected from a stac-geoparquet file belongs to that file's
   // collection, so link back to the file-level view instead of following the
   // item's own links, which may be relative or not URLs at all.
-  const isGeoparquetItem =
-    hrefIsParquet && !!stacGeoparquetId && value.type === "Feature";
+  const isGeoparquetItem = useIsStacGeoparquetItem(value);
 
   return (
     <Breadcrumb.Root size={"sm"}>
       <Breadcrumb.List flexWrap="wrap">
-        {isGeoparquetItem && href && connection ? (
-          <GeoparquetCollectionBreadcrumbLink
-            href={href}
-            connection={connection}
-          />
+        {isGeoparquetItem ? (
+          <GeoparquetCollectionBreadcrumbLink />
         ) : (
           getBreadcrumbLink(value)
         )}
@@ -82,20 +72,8 @@ function BreadcrumbLink({
   );
 }
 
-function GeoparquetCollectionBreadcrumbLink({
-  href,
-  connection,
-}: {
-  href: string;
-  connection: AsyncDuckDBConnection;
-}) {
+function GeoparquetCollectionBreadcrumbLink() {
   const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
-  const result = useStacGeoparquetValue({ href, connection });
-  const title =
-    (result.data?.title as string | undefined) ||
-    href.split("/").pop() ||
-    "Collection";
-
   return (
     <>
       <Breadcrumb.Item>
@@ -106,12 +84,7 @@ function GeoparquetCollectionBreadcrumbLink({
             setStacGeoparquetId(null);
           }}
         >
-          <HStack gap={1} whiteSpace="nowrap">
-            {result.data && <StacIcon value={result.data} />}
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-              {title}
-            </span>
-          </HStack>
+          Collection
         </Breadcrumb.Link>
       </Breadcrumb.Item>
       <Breadcrumb.Separator />
