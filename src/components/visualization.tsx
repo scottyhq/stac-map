@@ -361,13 +361,10 @@ function PageLayer({
   }, [page, assetKey]);
 
   useEffect(() => {
-    // MosaicLayer caches each item's sublayers and has no
-    // way to pass `updateTriggers` through, so a new style needs a new layer.
-    // Unlike a single asset, this refetches the items' tiles.
-    const styleKey = JSON.stringify(
-      renderTileTriggers(rasterRange ?? undefined, rasterStyle)
-    );
-    const id = `visualization-page-${pageIndex}-${assetKey}-${styleKey}`;
+    // Keep the id stable across style changes: MosaicLayer re-runs
+    // `renderSource` for items it has already opened, and `renderTile` triggers
+    // redraw their loaded tiles, so restyling doesn't refetch anything.
+    const id = `visualization-page-${pageIndex}-${assetKey}`;
     if (items.length === 0) {
       setLayer(id, undefined);
       return;
@@ -394,6 +391,9 @@ function PageLayer({
                 ...subLayerProps,
                 source,
                 ...pipeline,
+                updateTriggers: {
+                  renderTile: renderTileTriggers(range, rasterStyle),
+                },
               })
             : new COGLayer({ ...subLayerProps, source });
         },

@@ -1,51 +1,63 @@
+import { COLORMAP_INDEX } from "@developmentseed/deck.gl-raster/gpu-modules";
 import { describe, expect, it } from "vitest";
 import {
   COLORMAP_NAMES,
-  buildColormapAtlas,
-  colormapGradient,
+  colormapSwatchStyle,
   formatValue,
-  getColormapLut,
   isColormapName,
   legendTicks,
 } from "../../src/utils/colormap";
 
-describe("colormap LUTs", () => {
-  it("decodes every colormap to 256 RGB entries", () => {
-    for (const name of COLORMAP_NAMES) {
-      expect(getColormapLut(name)).toHaveLength(256 * 3);
+describe("colormap names", () => {
+  it("lists every colormap in deck.gl-raster's sprite, in sprite order", () => {
+    expect(COLORMAP_NAMES).toHaveLength(Object.keys(COLORMAP_INDEX).length);
+    COLORMAP_NAMES.forEach((name, i) => expect(COLORMAP_INDEX[name]).toBe(i));
+  });
+
+  it("still includes the colormaps offered before", () => {
+    for (const name of [
+      "viridis",
+      "plasma",
+      "inferno",
+      "magma",
+      "cividis",
+      "turbo",
+      "terrain",
+      "coolwarm",
+      "rdbu",
+      "spectral",
+      "ylgnbu",
+    ]) {
+      expect(isColormapName(name)).toBe(true);
     }
   });
 
-  it("matches matplotlib's viridis end colors", () => {
-    const lut = getColormapLut("viridis");
-    expect([...lut.slice(0, 3)]).toEqual([68, 1, 84]);
-    expect([...lut.slice(255 * 3)]).toEqual([253, 231, 37]);
-  });
-
-  it("packs one opaque RGBA row per colormap into the atlas", () => {
-    const atlas = buildColormapAtlas();
-    expect(atlas).toHaveLength(256 * 4 * COLORMAP_NAMES.length);
-    const row = COLORMAP_NAMES.indexOf("viridis");
-    expect([...atlas.slice(row * 1024, row * 1024 + 4)]).toEqual([
-      68, 1, 84, 255,
-    ]);
-  });
-
   it("recognises colormap names", () => {
-    expect(isColormapName("magma")).toBe(true);
+    expect(isColormapName("ice")).toBe(true);
     expect(isColormapName("greyscale")).toBe(false);
+    expect(isColormapName("toString")).toBe(false);
     expect(isColormapName(undefined)).toBe(false);
   });
 });
 
-describe("colormapGradient", () => {
-  it("runs from the first to the last color, or back when reversed", () => {
-    expect(colormapGradient("viridis", false, 2)).toBe(
-      "linear-gradient(to right, rgb(68, 1, 84), rgb(253, 231, 37))"
+describe("colormapSwatchStyle", () => {
+  const count = COLORMAP_NAMES.length;
+
+  it("shows the colormap's row of the sprite", () => {
+    expect(colormapSwatchStyle(COLORMAP_NAMES[0]).backgroundPosition).toBe(
+      "0 0%"
     );
-    expect(colormapGradient("viridis", true, 2)).toBe(
-      "linear-gradient(to right, rgb(253, 231, 37), rgb(68, 1, 84))"
+    expect(
+      colormapSwatchStyle(COLORMAP_NAMES[count - 1]).backgroundPosition
+    ).toBe("0 100%");
+    expect(colormapSwatchStyle("viridis").backgroundSize).toBe(
+      `100% ${count * 100}%`
     );
+  });
+
+  it("mirrors the swatch when reversed", () => {
+    expect(colormapSwatchStyle("viridis").transform).toBeUndefined();
+    expect(colormapSwatchStyle("viridis", true).transform).toBe("scaleX(-1)");
   });
 });
 

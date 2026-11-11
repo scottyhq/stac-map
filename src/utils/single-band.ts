@@ -2,6 +2,7 @@ import { Photometric } from "@cogeotiff/core";
 import type { COGLayerProps } from "@developmentseed/deck.gl-geotiff";
 import {
   BlackIsZero,
+  COLORMAP_INDEX,
   CreateTexture,
   FilterNoDataVal,
   LinearRescale,
@@ -14,7 +15,6 @@ import type { Texture } from "@luma.gl/core";
 import type { StacAsset } from "stac-ts";
 import {
   Colormap,
-  COLORMAP_NAMES,
   getColormapTexture,
   LogRescale,
   type ColormapName,
@@ -102,7 +102,8 @@ export function renderTileTriggers(
 export type SingleBandTileData = SampledTile & {
   texture: Texture;
   mask?: Texture;
-  colormapTexture: Texture;
+  /** Undefined if the colormap sprite couldn't be loaded. */
+  colormapTexture?: Texture;
   height: number;
   width: number;
   byteLength: number;
@@ -132,11 +133,11 @@ export function singleBandPipeline(
     image: GeoTIFF | Overview,
     { device, x, y, signal, pool }
   ) => {
-    const { array } = await image.fetchTile(x, y, {
-      boundless: false,
-      pool,
-      signal,
-    });
+    // The colormap texture is shared, so this only waits on the first tile.
+    const [{ array }, colormapTexture] = await Promise.all([
+      image.fetchTile(x, y, { boundless: false, pool, signal }),
+      getColormapTexture(device),
+    ]);
     const { width, height, mask } = array;
     const source =
       array.layout === "band-separate" ? array.bands[0] : array.data;
@@ -165,7 +166,7 @@ export function singleBandPipeline(
     return {
       texture,
       mask: maskTexture,
-      colormapTexture: getColormapTexture(device),
+      colormapTexture,
       byteLength,
       width,
       height,
@@ -209,13 +210,12 @@ export function singleBandPipeline(
         props: { rescaleMin: range.min, rescaleMax: range.max },
       });
     }
-    if (style.colormap) {
+    if (style.colormap && data.colormapTexture) {
       renderPipeline.push({
         module: Colormap,
         props: {
           colormapTexture: data.colormapTexture,
-          colormapIndex: COLORMAP_NAMES.indexOf(style.colormap),
-          colormapCount: COLORMAP_NAMES.length,
+          colormapIndex: COLORMAP_INDEX[style.colormap],
           reversed: style.reversed,
         },
       });

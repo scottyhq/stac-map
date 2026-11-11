@@ -1,6 +1,7 @@
 import { Photometric } from "@cogeotiff/core";
 import {
   BlackIsZero,
+  COLORMAP_INDEX,
   CreateTexture,
   FilterNoDataVal,
   LinearRescale,
@@ -296,7 +297,17 @@ describe("singleBandPipeline with a style", () => {
       colormapTexture,
       reversed: true,
     });
-    expect(renderPipeline[2].props!.colormapIndex).toBeGreaterThanOrEqual(0);
+    expect(renderPipeline[2].props!.colormapIndex).toBe(COLORMAP_INDEX.magma);
+  });
+
+  it("falls back to greyscale when the colormap sprite didn't load", () => {
+    const pipeline = singleBandPipeline(
+      plain(),
+      { min: 0, max: 10 },
+      { colormap: "magma", reversed: false, scale: "linear" }
+    );
+    const { renderPipeline } = pipeline!.renderTile(tileData({}))!;
+    expect(renderPipeline.at(-1)!.module).toBe(BlackIsZero);
   });
 
   it("uses LogRescale with natural-log bounds on a log scale", () => {
