@@ -4,6 +4,11 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ExtraLayerProps } from "./components/stac-map";
 import type { QueryableFilter } from "./utils/cql2";
+import {
+  DEFAULT_RASTER_STYLE,
+  type BandRange,
+  type RasterStyle,
+} from "./utils/single-band";
 
 export type Color = [number, number, number, number];
 export type Projection = "mercator" | "globe";
@@ -89,6 +94,15 @@ export interface State {
   setHivePartitioning: (hivePartitioning: boolean) => void;
   visualization: string | null;
   setVisualization: (visualization: string | null) => void;
+  /** Colormap and scale for single-band rasters. */
+  rasterStyle: RasterStyle;
+  setRasterStyle: (style: Partial<RasterStyle>) => void;
+  /**
+   * A user-set value range for single-band rasters, replacing the one from
+   * STAC or GeoTIFF statistics. Cleared when the visualization changes.
+   */
+  rasterRange: BandRange | null;
+  setRasterRange: (range: BandRange | null) => void;
   bookmarks: Bookmark[];
   addBookmark: (href: string) => void;
   removeBookmark: (href: string) => void;
@@ -167,7 +181,15 @@ export const useStore = create<State>()(
       hivePartitioning: false,
       setHivePartitioning: (hivePartitioning) => set({ hivePartitioning }),
       visualization: null,
-      setVisualization: (visualization) => set({ visualization }),
+      setVisualization: (visualization) => {
+        if (visualization === get().visualization) return;
+        set({ visualization, rasterRange: null });
+      },
+      rasterStyle: DEFAULT_RASTER_STYLE,
+      setRasterStyle: (style) =>
+        set({ rasterStyle: { ...get().rasterStyle, ...style } }),
+      rasterRange: null,
+      setRasterRange: (rasterRange) => set({ rasterRange }),
       bookmarks: [],
       addBookmark: (href) => {
         if (get().bookmarks.some((bookmark) => bookmark.href === href)) return;
