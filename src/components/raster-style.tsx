@@ -1,7 +1,7 @@
 import { useStore } from "@/store";
 import {
   COLORMAP_NAMES,
-  colormapGradient,
+  colormapSwatchStyle,
   formatValue,
   isColormapName,
   legendTicks,
@@ -15,27 +15,27 @@ import {
 import {
   Box,
   Checkbox,
+  Combobox,
   HStack,
   IconButton,
   Input,
   Portal,
   SegmentGroup,
-  Select,
   Stack,
   Text,
-  createListCollection,
+  useFilter,
+  useListCollection,
+  type BoxProps,
 } from "@chakra-ui/react";
 import { useState } from "react";
 import { LuRotateCcw } from "react-icons/lu";
 
 const GREYSCALE = "greyscale";
 
-const colormapCollection = createListCollection({
-  items: [GREYSCALE, ...COLORMAP_NAMES].map((name) => ({
-    label: name,
-    value: name,
-  })),
-});
+const COLORMAP_ITEMS = [GREYSCALE, ...COLORMAP_NAMES].map((name) => ({
+  label: name,
+  value: name,
+}));
 
 /**
  * Colormap, scale and value range controls for a single-band raster, with a
@@ -75,54 +75,11 @@ export default function RasterStyleControls({
   return (
     <Stack gap={2} fontSize={"xs"}>
       <HStack gap={2}>
-        <Select.Root
-          size={"xs"}
-          flex={1}
-          collection={colormapCollection}
-          value={[style.colormap ?? GREYSCALE]}
-          onValueChange={(e) => {
-            const value = e.value[0];
-            setStyle({ colormap: isColormapName(value) ? value : null });
-          }}
+        <ColormapPicker
+          value={style.colormap}
+          onChange={(colormap) => setStyle({ colormap })}
           disabled={disabled}
-        >
-          <Select.HiddenSelect />
-          <Select.Label srOnly>Colormap</Select.Label>
-          <Select.Control>
-            <Select.Trigger>
-              <Select.ValueText placeholder={"Colormap"} />
-            </Select.Trigger>
-            <Select.IndicatorGroup>
-              <Select.Indicator />
-            </Select.IndicatorGroup>
-          </Select.Control>
-          <Portal>
-            <Select.Positioner>
-              <Select.Content>
-                {colormapCollection.items.map((item) => (
-                  <Select.Item key={item.value} item={item}>
-                    <HStack gap={2} flex={1}>
-                      <Box
-                        w={12}
-                        h={2.5}
-                        borderRadius={"xs"}
-                        flexShrink={0}
-                        style={{
-                          background: gradient(
-                            isColormapName(item.value) ? item.value : null,
-                            false
-                          ),
-                        }}
-                      />
-                      <Select.ItemText>{item.label}</Select.ItemText>
-                    </HStack>
-                    <Select.ItemIndicator />
-                  </Select.Item>
-                ))}
-              </Select.Content>
-            </Select.Positioner>
-          </Portal>
-        </Select.Root>
+        />
         <Checkbox.Root
           size={"xs"}
           checked={style.reversed}
@@ -176,15 +133,11 @@ export default function RasterStyleControls({
       </HStack>
 
       <Stack gap={0.5}>
-        <Box
-          h={2.5}
-          borderRadius={"xs"}
-          style={{
-            background: gradient(
-              style.colormap,
-              style.colormap ? style.reversed : style.reversed !== whiteIsZero
-            ),
-          }}
+        <Swatch
+          colormap={style.colormap}
+          reversed={
+            style.colormap ? style.reversed : style.reversed !== whiteIsZero
+          }
         />
         <HStack justify={"space-between"} color={"fg.muted"}>
           {shownRange ? (
@@ -264,9 +217,96 @@ function RangeInput({
   );
 }
 
-function gradient(colormap: ColormapName | null, reversed: boolean): string {
-  if (colormap) return colormapGradient(colormap, reversed);
-  return reversed
-    ? "linear-gradient(to right, white, black)"
-    : "linear-gradient(to right, black, white)";
+/** A searchable list of every colormap, with a preview of each. */
+function ColormapPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ColormapName | null;
+  onChange: (colormap: ColormapName | null) => void;
+  disabled?: boolean;
+}) {
+  const { contains } = useFilter({ sensitivity: "base" });
+  const { collection, filter } = useListCollection({
+    initialItems: COLORMAP_ITEMS,
+    filter: contains,
+  });
+
+  return (
+    <Combobox.Root
+      size={"xs"}
+      flex={1}
+      collection={collection}
+      value={[value ?? GREYSCALE]}
+      onValueChange={(e) => {
+        const next = e.value[0];
+        onChange(isColormapName(next) ? next : null);
+      }}
+      // Filter only on typing. Selecting fills the input with the chosen name,
+      // which shouldn't hide the other colormaps the next time the list opens.
+      onInputValueChange={(e) => {
+        filter(e.reason === "input-change" ? e.inputValue : "");
+      }}
+      openOnClick
+      disabled={disabled}
+    >
+      <Combobox.Label srOnly>Colormap</Combobox.Label>
+      <Combobox.Control>
+        <Combobox.Input placeholder={"Search colormaps"} />
+        <Combobox.IndicatorGroup>
+          <Combobox.Trigger />
+        </Combobox.IndicatorGroup>
+      </Combobox.Control>
+      <Portal>
+        <Combobox.Positioner>
+          <Combobox.Content maxH={"xs"}>
+            <Combobox.Empty>No matching colormaps</Combobox.Empty>
+            {collection.items.map((item) => (
+              <Combobox.Item key={item.value} item={item}>
+                <HStack gap={2} flex={1}>
+                  <Swatch
+                    colormap={isColormapName(item.value) ? item.value : null}
+                    reversed={false}
+                    w={12}
+                    flexShrink={0}
+                  />
+                  <Combobox.ItemText>{item.label}</Combobox.ItemText>
+                </HStack>
+                <Combobox.ItemIndicator />
+              </Combobox.Item>
+            ))}
+          </Combobox.Content>
+        </Combobox.Positioner>
+      </Portal>
+    </Combobox.Root>
+  );
+}
+
+/** A colormap (or greyscale, for null) drawn left to right. */
+function Swatch({
+  colormap,
+  reversed,
+  ...props
+}: {
+  colormap: ColormapName | null;
+  reversed: boolean;
+} & BoxProps) {
+  return (
+    <Box
+      // A whole-pixel height keeps neighbouring sprite rows out of view.
+      h={"10px"}
+      borderRadius={"xs"}
+      style={
+        colormap
+          ? colormapSwatchStyle(colormap, reversed)
+          : {
+              background: reversed
+                ? "linear-gradient(to right, white, black)"
+                : "linear-gradient(to right, black, white)",
+            }
+      }
+      {...props}
+    />
+  );
 }

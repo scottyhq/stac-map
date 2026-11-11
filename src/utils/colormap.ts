@@ -1,137 +1,86 @@
+import {
+  COLORMAP_INDEX,
+  createColormapTexture,
+  decodeColormapSprite,
+  type ColormapName,
+} from "@developmentseed/deck.gl-raster/gpu-modules";
+import colormapSpriteUrl from "@developmentseed/deck.gl-raster/gpu-modules/colormaps.png?url";
 import type { Device, Texture } from "@luma.gl/core";
-import { COLORMAP_LUTS } from "./colormap-luts";
+import type { CSSProperties } from "react";
 import type { BandRange } from "./single-band";
 
-export type ColormapName = keyof typeof COLORMAP_LUTS;
+export { Colormap } from "@developmentseed/deck.gl-raster/gpu-modules";
+export type { ColormapName };
 
-export const COLORMAP_NAMES = Object.keys(COLORMAP_LUTS) as ColormapName[];
-
-const LUT_SIZE = 256;
+/** Every colormap in deck.gl-raster's sprite, in sprite (alphabetical) order. */
+export const COLORMAP_NAMES = Object.keys(COLORMAP_INDEX) as ColormapName[];
 
 export function isColormapName(value: unknown): value is ColormapName {
-  return typeof value === "string" && value in COLORMAP_LUTS;
+  return typeof value === "string" && Object.hasOwn(COLORMAP_INDEX, value);
 }
 
-const lutCache = new Map<ColormapName, Uint8Array>();
+let spritePromise: Promise<ImageData> | undefined;
 
-/** The 256 RGB entries of a colormap, as 768 bytes. */
-export function getColormapLut(name: ColormapName): Uint8Array {
-  let lut = lutCache.get(name);
-  if (!lut) {
-    const binary = atob(COLORMAP_LUTS[name]);
-    lut = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) lut[i] = binary.charCodeAt(i);
-    lutCache.set(name, lut);
-  }
-  return lut;
+function loadColormapSprite(): Promise<ImageData> {
+  spritePromise ??= fetch(colormapSpriteUrl)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Colormap sprite: HTTP ${response.status}`);
+      }
+      return response.arrayBuffer();
+    })
+    .then(decodeColormapSprite)
+    .catch((error) => {
+      // Let a later tile try again.
+      spritePromise = undefined;
+      throw error;
+    });
+  return spritePromise;
 }
+
+const textureCache = new WeakMap<Device, Promise<Texture | undefined>>();
 
 /**
- * All colormaps packed into one RGBA image, 256 pixels wide with one row per
- * colormap, in {@link COLORMAP_NAMES} order.
+ * deck.gl-raster's colormap sprite as a GPU texture, for the `Colormap` module.
+ * The sprite is fetched once and the texture created once per device, so
+ * switching colormaps only changes a uniform. Resolves to undefined if the
+ * sprite can't be loaded, in which case tiles fall back to greyscale.
  */
-export function buildColormapAtlas(): Uint8Array {
-  const atlas = new Uint8Array(LUT_SIZE * COLORMAP_NAMES.length * 4);
-  COLORMAP_NAMES.forEach((name, row) => {
-    const lut = getColormapLut(name);
-    for (let i = 0; i < LUT_SIZE; i++) {
-      const offset = (row * LUT_SIZE + i) * 4;
-      atlas[offset] = lut[i * 3];
-      atlas[offset + 1] = lut[i * 3 + 1];
-      atlas[offset + 2] = lut[i * 3 + 2];
-      atlas[offset + 3] = 255;
-    }
-  });
-  return atlas;
-}
-
-const textureCache = new WeakMap<Device, Texture>();
-
-/**
- * The colormap atlas as a GPU texture. Created once per device and shared by
- * every tile, so switching colormaps only changes a uniform.
- */
-export function getColormapTexture(device: Device): Texture {
+export function getColormapTexture(
+  device: Device
+): Promise<Texture | undefined> {
   let texture = textureCache.get(device);
   if (!texture) {
-    texture = device.createTexture({
-      data: buildColormapAtlas(),
-      format: "rgba8unorm",
-      width: LUT_SIZE,
-      height: COLORMAP_NAMES.length,
-      sampler: {
-        minFilter: "linear",
-        magFilter: "linear",
-        addressModeU: "clamp-to-edge",
-        addressModeV: "clamp-to-edge",
-      },
-    });
+    texture = loadColormapSprite().then(
+      (sprite) => createColormapTexture(device, sprite),
+      (error) => {
+        console.warn("Could not load colormaps", error);
+        textureCache.delete(device);
+        return undefined;
+      }
+    );
     textureCache.set(device, texture);
   }
   return texture;
 }
 
-/** A CSS `linear-gradient` that previews a colormap, for legends and pickers. */
-export function colormapGradient(
-  name: ColormapName,
-  reversed = false,
-  stops = 16
-): string {
-  const lut = getColormapLut(name);
-  const colors: string[] = [];
-  for (let s = 0; s < stops; s++) {
-    const t = s / (stops - 1);
-    const i = Math.round((reversed ? 1 - t : t) * (LUT_SIZE - 1));
-    colors.push(`rgb(${lut[i * 3]}, ${lut[i * 3 + 1]}, ${lut[i * 3 + 2]})`);
-  }
-  return `linear-gradient(to right, ${colors.join(", ")})`;
-}
-
-export type ColormapProps = {
-  colormapTexture: Texture;
-  colormapIndex: number;
-  colormapCount: number;
-  reversed: boolean;
-};
-
 /**
- * A shader module that maps the normalized value in `color.r` (0–1) through
- * one row of the colormap atlas from {@link getColormapTexture}.
+ * CSS that draws one row of the colormap sprite across an element, for legends
+ * and pickers. The element needs a whole-pixel height so rows don't bleed.
  */
-export const Colormap = {
-  name: "colormap",
-  fs: /* glsl */ `\
-uniform colormapUniforms {
-  float colormapIndex;
-  float colormapCount;
-  float reversed;
-} colormap;
-`,
-  inject: {
-    "fs:#decl": `uniform sampler2D colormapTexture;`,
-    "fs:DECKGL_FILTER_COLOR": /* glsl */ `
-      float colormapT = clamp(color.r, 0.0, 1.0);
-      colormapT = mix(colormapT, 1.0 - colormapT, colormap.reversed);
-      // Sample texel centres so 0 and 1 land exactly on the end colors.
-      vec2 colormapUv = vec2(
-        (colormapT * ${LUT_SIZE - 1}.0 + 0.5) / ${LUT_SIZE}.0,
-        (colormap.colormapIndex + 0.5) / colormap.colormapCount
-      );
-      color.rgb = texture(colormapTexture, colormapUv).rgb;
-    `,
-  },
-  uniformTypes: {
-    colormapIndex: "f32",
-    colormapCount: "f32",
-    reversed: "f32",
-  },
-  getUniforms: (props: Partial<ColormapProps>) => ({
-    colormapTexture: props.colormapTexture,
-    colormapIndex: props.colormapIndex ?? 0,
-    colormapCount: props.colormapCount ?? COLORMAP_NAMES.length,
-    reversed: props.reversed ? 1 : 0,
-  }),
-} as const;
+export function colormapSwatchStyle(
+  name: ColormapName,
+  reversed = false
+): CSSProperties {
+  const count = COLORMAP_NAMES.length;
+  return {
+    backgroundImage: `url(${colormapSpriteUrl})`,
+    backgroundSize: `100% ${count * 100}%`,
+    backgroundPosition: `0 ${(COLORMAP_INDEX[name] / (count - 1)) * 100}%`,
+    imageRendering: "pixelated",
+    transform: reversed ? "scaleX(-1)" : undefined,
+  };
+}
 
 export type LogRescaleProps = {
   /** Natural log of the value that maps to 0. */

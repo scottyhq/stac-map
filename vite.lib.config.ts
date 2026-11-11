@@ -33,7 +33,10 @@ export default defineConfig({
       cssFileName: "style",
     },
     rollupOptions: {
-      external: (id) => (id.endsWith(".css") ? false : externalRegex.test(id)),
+      // Bundle CSS, and inline assets such as deck.gl-raster's colormap sprite
+      // so apps embedding stac-map don't need an asset loader for them.
+      external: (id) =>
+        /\.(css|png)(\?|$)/.test(id) ? false : externalRegex.test(id),
     },
   },
   resolve: {
