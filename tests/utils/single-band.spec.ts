@@ -10,10 +10,13 @@ import {
 import type { GeoTIFF } from "@developmentseed/geotiff";
 import type { StacAsset } from "stac-ts";
 import { describe, expect, it } from "vitest";
+import { Colormap, LogRescale } from "../../src/utils/colormap";
 import {
   accumulateMinMax,
   getStacBandStatistics,
   getStoredBandStatistics,
+  logScaleRange,
+  renderTileTriggers,
   resolveBandRange,
   singleBandPipeline,
   type SingleBandTileData,
@@ -263,5 +266,97 @@ describe("accumulateMinMax", () => {
     const acc = { min: Infinity, max: -Infinity };
     accumulateMinMax(acc, [5, NaN, 9, Infinity], null, null);
     expect(acc).toEqual({ min: 5, max: 9 });
+  });
+});
+
+describe("singleBandPipeline with a style", () => {
+  const plain = () =>
+    tiff({
+      samplesPerPixel: 1,
+      photometric: Photometric.MinIsBlack,
+      nodata: null,
+    });
+  const colormapTexture = { id: "colormap" };
+
+  it("ends with Colormap instead of BlackIsZero when a colormap is set", () => {
+    const pipeline = singleBandPipeline(
+      plain(),
+      { min: 0, max: 10 },
+      { colormap: "magma", reversed: true, scale: "linear" }
+    );
+    const { renderPipeline } = pipeline!.renderTile(
+      tileData({ colormapTexture } as never)
+    )!;
+    expect(renderPipeline.map((step) => step.module)).toEqual([
+      CreateTexture,
+      LinearRescale,
+      Colormap,
+    ]);
+    expect(renderPipeline[2].props).toMatchObject({
+      colormapTexture,
+      reversed: true,
+    });
+    expect(renderPipeline[2].props!.colormapIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  it("uses LogRescale with natural-log bounds on a log scale", () => {
+    const pipeline = singleBandPipeline(
+      plain(),
+      { min: 0.1, max: 10000 },
+      { colormap: null, reversed: false, scale: "log" }
+    );
+    const { renderPipeline } = pipeline!.renderTile(tileData({}))!;
+    expect(renderPipeline[1].module).toBe(LogRescale);
+    expect(renderPipeline[1].props!.logMin).toBeCloseTo(Math.log(0.1));
+    expect(renderPipeline[1].props!.logMax).toBeCloseTo(Math.log(10000));
+  });
+
+  it("falls back to LinearRescale on a log scale when max <= 0", () => {
+    const pipeline = singleBandPipeline(
+      plain(),
+      { min: -10, max: 0 },
+      { colormap: null, reversed: false, scale: "log" }
+    );
+    const { renderPipeline } = pipeline!.renderTile(tileData({}))!;
+    expect(renderPipeline[1].module).toBe(LinearRescale);
+  });
+
+  it("swaps greyscale direction when reversed without a colormap", () => {
+    const pipeline = singleBandPipeline(
+      plain(),
+      { min: 0, max: 1 },
+      { colormap: null, reversed: true, scale: "linear" }
+    );
+    const { renderPipeline } = pipeline!.renderTile(tileData({}))!;
+    expect(renderPipeline.at(-1)!.module).toBe(WhiteIsZero);
+  });
+});
+
+describe("logScaleRange", () => {
+  it("keeps a positive range", () => {
+    expect(logScaleRange({ min: 0.1, max: 100 })).toEqual({
+      min: 0.1,
+      max: 100,
+    });
+  });
+
+  it("raises a min <= 0 to three decades below max", () => {
+    expect(logScaleRange({ min: 0, max: 5000 })).toEqual({ min: 5, max: 5000 });
+  });
+
+  it("returns undefined when max <= 0", () => {
+    expect(logScaleRange({ min: -5, max: 0 })).toBeUndefined();
+  });
+});
+
+describe("renderTileTriggers", () => {
+  it("changes when the style or range changes", () => {
+    const style = { colormap: null, reversed: false, scale: "linear" } as const;
+    const base = renderTileTriggers({ min: 0, max: 1 }, style);
+    expect(renderTileTriggers({ min: 0, max: 1 }, style)).toEqual(base);
+    expect(renderTileTriggers({ min: 0, max: 2 }, style)).not.toEqual(base);
+    expect(
+      renderTileTriggers({ min: 0, max: 1 }, { ...style, scale: "log" })
+    ).not.toEqual(base);
   });
 });

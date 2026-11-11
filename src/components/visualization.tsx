@@ -4,18 +4,23 @@ import type { StacAssets, StacItemCollection } from "@/types/stac";
 import { createPixelSampler } from "@/utils/pixel-sampler";
 import {
   isSingleBandGreyscale,
+  renderTileTriggers,
   resolveBandRange,
   singleBandPipeline,
+  type BandRange,
+  type RasterStyle,
   type SingleBandTileData,
 } from "@/utils/single-band";
-import { getCogHref, sanitizeBbox } from "@/utils/stac";
+import { getBandCount, getCogHref, sanitizeBbox } from "@/utils/stac";
 import {
   Checkbox,
   HStack,
   Portal,
   Select,
+  Stack,
   createListCollection,
 } from "@chakra-ui/react";
+import { Photometric } from "@cogeotiff/core";
 import {
   COGLayer,
   COGSource,
@@ -25,6 +30,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { LuEye, LuEyeOff } from "react-icons/lu";
 import type { StacAsset, StacItem, StacLink } from "stac-ts";
+import RasterStyleControls from "./raster-style";
 import Section from "./ui/section";
 
 export default function Visualization({
@@ -136,6 +142,22 @@ export default function Visualization({
     asset: selectedAsset,
   });
 
+  const rasterStyle = useStore((store) => store.rasterStyle);
+  const rasterRange = useStore((store) => store.rasterRange);
+  const range = rasterRange ?? bandRange;
+
+  const showRasterStyle = useMemo(() => {
+    if (selected?.startsWith("asset:")) {
+      return !!selectedCogGeotiff && isSingleBandGreyscale(selectedCogGeotiff);
+    }
+    if (selected?.startsWith("items:")) {
+      const key = selected.slice("items:".length);
+      const asset = allItems.find((item) => item.assets?.[key])?.assets[key];
+      return !!asset && getBandCount(asset) === 1;
+    }
+    return false;
+  }, [selected, selectedCogGeotiff, allItems]);
+
   // One sampler per GeoTIFF, so tiles it has collected survive layer updates
   // such as a new band range.
   const pixelSampler = useMemo(
@@ -160,7 +182,11 @@ export default function Visualization({
     if (selected.startsWith("asset:")) {
       if (!selectedCogGeotiff) return;
       const layerId = "visualization";
-      const pipeline = singleBandPipeline(selectedCogGeotiff, bandRange);
+      const pipeline = singleBandPipeline(
+        selectedCogGeotiff,
+        range,
+        rasterStyle
+      );
       setLayer(
         layerId,
         pipeline
@@ -168,6 +194,9 @@ export default function Visualization({
               id: layerId,
               source: selectedCogGeotiff,
               ...pipeline,
+              updateTriggers: {
+                renderTile: renderTileTriggers(range, rasterStyle),
+              },
               onTileLoad: (tile) => {
                 if (tile.content) pixelSampler?.add(tile.content);
               },
@@ -217,7 +246,8 @@ export default function Visualization({
     enabled,
     selected,
     selectedCogGeotiff,
-    bandRange,
+    range,
+    rasterStyle,
     pixelSampler,
     tilejsonLink,
     wmtsLink,
@@ -237,48 +267,63 @@ export default function Visualization({
             page={page}
             pageIndex={index}
             assetKey={selected.slice("items:".length)}
+            rasterStyle={rasterStyle}
+            rasterRange={rasterRange}
           />
         ))}
       <Section icon={enabled ? <LuEye /> : <LuEyeOff />} title="Visualization">
-        <HStack gap={4}>
-          <Checkbox.Root
-            checked={enabled}
-            onCheckedChange={(e) => setEnabled(!!e.checked)}
-            size={"sm"}
-          >
-            <Checkbox.HiddenInput />
-            <Checkbox.Control />
-          </Checkbox.Root>
-          <Select.Root
-            size={"sm"}
-            collection={collection}
-            value={selected ? [selected] : []}
-            onValueChange={(e) => setVisualization(e.value[0] ?? null)}
-            disabled={!enabled}
-          >
-            <Select.HiddenSelect />
-            <Select.Control>
-              <Select.Trigger>
-                <Select.ValueText placeholder={"Select a visualization"} />
-              </Select.Trigger>
-              <Select.IndicatorGroup>
-                <Select.Indicator />
-              </Select.IndicatorGroup>
-            </Select.Control>
-            <Portal>
-              <Select.Positioner>
-                <Select.Content>
-                  {collection.items.map((item) => (
-                    <Select.Item key={item.value} item={item}>
-                      <Select.ItemText>{item.label}</Select.ItemText>
-                      <Select.ItemIndicator />
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Positioner>
-            </Portal>
-          </Select.Root>
-        </HStack>
+        <Stack gap={3}>
+          <HStack gap={4}>
+            <Checkbox.Root
+              checked={enabled}
+              onCheckedChange={(e) => setEnabled(!!e.checked)}
+              size={"sm"}
+            >
+              <Checkbox.HiddenInput />
+              <Checkbox.Control />
+            </Checkbox.Root>
+            <Select.Root
+              size={"sm"}
+              collection={collection}
+              value={selected ? [selected] : []}
+              onValueChange={(e) => setVisualization(e.value[0] ?? null)}
+              disabled={!enabled}
+            >
+              <Select.HiddenSelect />
+              <Select.Control>
+                <Select.Trigger>
+                  <Select.ValueText placeholder={"Select a visualization"} />
+                </Select.Trigger>
+                <Select.IndicatorGroup>
+                  <Select.Indicator />
+                </Select.IndicatorGroup>
+              </Select.Control>
+              <Portal>
+                <Select.Positioner>
+                  <Select.Content>
+                    {collection.items.map((item) => (
+                      <Select.Item key={item.value} item={item}>
+                        <Select.ItemText>{item.label}</Select.ItemText>
+                        <Select.ItemIndicator />
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Positioner>
+              </Portal>
+            </Select.Root>
+          </HStack>
+          {showRasterStyle && (
+            <RasterStyleControls
+              autoRange={selected?.startsWith("asset:") ? bandRange : undefined}
+              whiteIsZero={
+                selected?.startsWith("asset:") &&
+                selectedCogGeotiff?.cachedPrimaryImageTags.photometric ===
+                  Photometric.MinIsWhite
+              }
+              disabled={!enabled}
+            />
+          )}
+        </Stack>
       </Section>
     </>
   );
@@ -291,10 +336,14 @@ function PageLayer({
   page,
   pageIndex,
   assetKey,
+  rasterStyle,
+  rasterRange,
 }: {
   page: StacItemCollection;
   pageIndex: number;
   assetKey: string;
+  rasterStyle: RasterStyle;
+  rasterRange: BandRange | null;
 }) {
   const setLayer = useStore((store) => store.setLayer);
   const items = useMemo(() => {
@@ -312,7 +361,13 @@ function PageLayer({
   }, [page, assetKey]);
 
   useEffect(() => {
-    const id = `visualization-page-${pageIndex}-${assetKey}`;
+    // MosaicLayer caches each item's sublayers and has no
+    // way to pass `updateTriggers` through, so a new style needs a new layer.
+    // Unlike a single asset, this refetches the items' tiles.
+    const styleKey = JSON.stringify(
+      renderTileTriggers(rasterRange ?? undefined, rasterStyle)
+    );
+    const id = `visualization-page-${pageIndex}-${assetKey}-${styleKey}`;
     if (items.length === 0) {
       setLayer(id, undefined);
       return;
@@ -326,8 +381,14 @@ function PageLayer({
           COGSource.open(item.assets.cog.href, options),
         renderSource: (item, { source, subLayerProps }) => {
           if (!source) return null;
-          const range = resolveBandRange(item.assets[assetKey], source.geotiff);
-          const pipeline = singleBandPipeline(source.geotiff, range);
+          const range =
+            rasterRange ??
+            resolveBandRange(item.assets[assetKey], source.geotiff);
+          const pipeline = singleBandPipeline(
+            source.geotiff,
+            range,
+            rasterStyle
+          );
           return pipeline
             ? new COGLayer<SingleBandTileData>({
                 ...subLayerProps,
@@ -339,7 +400,7 @@ function PageLayer({
       })
     );
     return () => setLayer(id, undefined);
-  }, [items, pageIndex, assetKey, setLayer]);
+  }, [items, pageIndex, assetKey, rasterStyle, rasterRange, setLayer]);
 
   return null;
 }

@@ -12,6 +12,13 @@ import {
 import type { GeoTIFF, Overview } from "@developmentseed/geotiff";
 import type { Texture } from "@luma.gl/core";
 import type { StacAsset } from "stac-ts";
+import {
+  Colormap,
+  COLORMAP_NAMES,
+  getColormapTexture,
+  LogRescale,
+  type ColormapName,
+} from "./colormap";
 import type { SampledTile } from "./pixel-sampler";
 
 export type BandRange = { min: number; max: number };
@@ -49,9 +56,53 @@ export function resolveBandRange(
   );
 }
 
+export type RasterScale = "linear" | "log";
+
+/** How a single-band raster is drawn. */
+export type RasterStyle = {
+  /** `null` draws greyscale, following the TIFF's photometric interpretation. */
+  colormap: ColormapName | null;
+  reversed: boolean;
+  scale: RasterScale;
+};
+
+export const DEFAULT_RASTER_STYLE: RasterStyle = {
+  colormap: null,
+  reversed: false,
+  scale: "linear",
+};
+
+/** How many decades a log scale spans when the range's minimum is ≤ 0. */
+const LOG_FALLBACK_DECADES = 3;
+
+/**
+ * The range a log scale actually uses. A log scale needs a positive minimum,
+ * so a minimum ≤ 0 is raised to {@link LOG_FALLBACK_DECADES} decades below the
+ * maximum. Returns undefined when the maximum isn't positive either.
+ */
+export function logScaleRange(range: BandRange): BandRange | undefined {
+  if (!(range.max > 0)) return undefined;
+  const min =
+    range.min > 0 ? range.min : range.max / 10 ** LOG_FALLBACK_DECADES;
+  if (min >= range.max) return undefined;
+  return { min, max: range.max };
+}
+
+/**
+ * Values that change how loaded tiles are drawn. Pass as
+ * `updateTriggers.renderTile` so a change re-renders tiles without refetching.
+ */
+export function renderTileTriggers(
+  range: BandRange | undefined,
+  style: RasterStyle
+): unknown[] {
+  return [range?.min, range?.max, style.colormap, style.reversed, style.scale];
+}
+
 export type SingleBandTileData = SampledTile & {
   texture: Texture;
   mask?: Texture;
+  colormapTexture: Texture;
   height: number;
   width: number;
   byteLength: number;
@@ -69,7 +120,8 @@ export function isSingleBandGreyscale(geotiff: GeoTIFF): boolean {
 
 export function singleBandPipeline(
   geotiff: GeoTIFF,
-  range: BandRange | undefined
+  range: BandRange | undefined,
+  style: RasterStyle = DEFAULT_RASTER_STYLE
 ): SingleBandPipeline | undefined {
   if (!isSingleBandGreyscale(geotiff)) {
     return undefined;
@@ -113,6 +165,7 @@ export function singleBandPipeline(
     return {
       texture,
       mask: maskTexture,
+      colormapTexture: getColormapTexture(device),
       byteLength,
       width,
       height,
@@ -140,16 +193,38 @@ export function singleBandPipeline(
         props: { maskTexture: data.mask },
       });
     }
-    if (range) {
+    const logRange =
+      range && style.scale === "log" ? logScaleRange(range) : undefined;
+    if (logRange) {
+      renderPipeline.push({
+        module: LogRescale,
+        props: {
+          logMin: Math.log(logRange.min),
+          logMax: Math.log(logRange.max),
+        },
+      });
+    } else if (range) {
       renderPipeline.push({
         module: LinearRescale,
         props: { rescaleMin: range.min, rescaleMax: range.max },
       });
     }
-    renderPipeline.push({
-      module:
-        photometric === Photometric.MinIsWhite ? WhiteIsZero : BlackIsZero,
-    });
+    if (style.colormap) {
+      renderPipeline.push({
+        module: Colormap,
+        props: {
+          colormapTexture: data.colormapTexture,
+          colormapIndex: COLORMAP_NAMES.indexOf(style.colormap),
+          colormapCount: COLORMAP_NAMES.length,
+          reversed: style.reversed,
+        },
+      });
+    } else {
+      const whiteIsZero = photometric === Photometric.MinIsWhite;
+      renderPipeline.push({
+        module: whiteIsZero !== style.reversed ? WhiteIsZero : BlackIsZero,
+      });
+    }
     return { renderPipeline };
   };
 
