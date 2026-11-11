@@ -1,4 +1,4 @@
-import { useStacValue } from "@/hooks/stac";
+import { useIsStacGeoparquetItem, useStacValue } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacAssets, StacValue } from "@/types/stac";
 import { exceedsMercatorBounds } from "@/utils/projection";
@@ -43,6 +43,7 @@ export default function Value({
   const setValueBbox = useStore((store) => store.setValueBbox);
   const setLayer = useStore((store) => store.setLayer);
   const hrefIsParquet = useStore((store) => store.hrefIsParquet);
+  const isStacGeoparquetItem = useIsStacGeoparquetItem(value);
   const setProjection = useStore((store) => store.setProjection);
   const version = value.stac_version as string;
   const thumbnailAsset = getThumbnailAsset(value);
@@ -141,7 +142,12 @@ export default function Value({
         {rootLink && <Root link={rootLink} value={value} />}
         {properties && <Properties properties={properties} />}
         {assets && <Assets assets={assets} />}
-        {value.links && value.links.length > 0 && <Links links={value.links} />}
+        {value.links && value.links.length > 0 && (
+          <Links
+            links={value.links}
+            isStacGeoparquetItem={isStacGeoparquetItem}
+          />
+        )}
       </Stack>
     </Stack>
   );

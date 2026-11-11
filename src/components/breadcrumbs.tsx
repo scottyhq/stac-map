@@ -1,5 +1,5 @@
 import { StacIcon } from "@/components/ui/stac";
-import { useStacValue } from "@/hooks/stac";
+import { useIsStacGeoparquetItem, useStacValue } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacValue } from "@/types/stac";
 import { getLink, getStacTitle, getStacType } from "@/utils/stac";
@@ -8,10 +8,19 @@ import { useMemo } from "react";
 import type { StacLink } from "stac-ts";
 
 export default function Breadcrumbs({ value }: { value: StacValue }) {
+  // An item selected from a stac-geoparquet file belongs to that file's
+  // collection, so link back to the file-level view instead of following the
+  // item's own links, which may be relative or not URLs at all.
+  const isGeoparquetItem = useIsStacGeoparquetItem(value);
+
   return (
     <Breadcrumb.Root size={"sm"}>
       <Breadcrumb.List flexWrap="wrap">
-        {getBreadcrumbLink(value)}
+        {isGeoparquetItem ? (
+          <GeoparquetCollectionBreadcrumbLink />
+        ) : (
+          getBreadcrumbLink(value)
+        )}
         <Breadcrumb.Item>
           <Breadcrumb.CurrentLink>
             <HStack whiteSpace="nowrap">{getStacType(value)}</HStack>
@@ -56,6 +65,26 @@ function BreadcrumbLink({
           }}
         >
           {text}
+        </Breadcrumb.Link>
+      </Breadcrumb.Item>
+      <Breadcrumb.Separator />
+    </>
+  );
+}
+
+function GeoparquetCollectionBreadcrumbLink() {
+  const setStacGeoparquetId = useStore((store) => store.setStacGeoparquetId);
+  return (
+    <>
+      <Breadcrumb.Item>
+        <Breadcrumb.Link
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            setStacGeoparquetId(null);
+          }}
+        >
+          Collection
         </Breadcrumb.Link>
       </Breadcrumb.Item>
       <Breadcrumb.Separator />
