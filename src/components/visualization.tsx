@@ -1,7 +1,9 @@
 import { useGeoTIFF, useGeoTIFFBandRange } from "@/hooks/stac";
 import { useStore } from "@/store";
 import type { StacAssets, StacItemCollection } from "@/types/stac";
+import { createPixelSampler } from "@/utils/pixel-sampler";
 import {
+  isSingleBandGreyscale,
   resolveBandRange,
   singleBandPipeline,
   type SingleBandTileData,
@@ -134,6 +136,23 @@ export default function Visualization({
     asset: selectedAsset,
   });
 
+  // One sampler per GeoTIFF, so tiles it has collected survive layer updates
+  // such as a new band range.
+  const pixelSampler = useMemo(
+    () =>
+      selectedCogGeotiff && isSingleBandGreyscale(selectedCogGeotiff)
+        ? createPixelSampler(selectedCogGeotiff)
+        : undefined,
+    [selectedCogGeotiff]
+  );
+  const setPixelSampler = useStore((store) => store.setPixelSampler);
+
+  useEffect(() => {
+    if (!enabled || !selected?.startsWith("asset:") || !pixelSampler) return;
+    setPixelSampler(pixelSampler);
+    return () => setPixelSampler(null);
+  }, [enabled, selected, pixelSampler, setPixelSampler]);
+
   useEffect(() => {
     if (!enabled || !selected) return;
     if (selected.startsWith("items:")) return;
@@ -149,6 +168,12 @@ export default function Visualization({
               id: layerId,
               source: selectedCogGeotiff,
               ...pipeline,
+              onTileLoad: (tile) => {
+                if (tile.content) pixelSampler?.add(tile.content);
+              },
+              onTileUnload: (tile) => {
+                if (tile.content) pixelSampler?.remove(tile.content);
+              },
             })
           : new COGLayer({
               id: layerId,
@@ -193,6 +218,7 @@ export default function Visualization({
     selected,
     selectedCogGeotiff,
     bandRange,
+    pixelSampler,
     tilejsonLink,
     wmtsLink,
     setLayer,

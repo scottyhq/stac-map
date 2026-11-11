@@ -12,6 +12,7 @@ import {
 import type { GeoTIFF, Overview } from "@developmentseed/geotiff";
 import type { Texture } from "@luma.gl/core";
 import type { StacAsset } from "stac-ts";
+import type { SampledTile } from "./pixel-sampler";
 
 export type BandRange = { min: number; max: number };
 
@@ -48,7 +49,7 @@ export function resolveBandRange(
   );
 }
 
-export type SingleBandTileData = {
+export type SingleBandTileData = SampledTile & {
   texture: Texture;
   mask?: Texture;
   height: number;
@@ -96,7 +97,8 @@ export function singleBandPipeline(
       height,
       sampler: { minFilter: "nearest", magFilter: "nearest" },
     });
-    let byteLength = data.byteLength;
+    // The values stay on the CPU too so the pixel sampler can read them.
+    let byteLength = data.byteLength * 2;
     let maskTexture: Texture | undefined;
     if (mask) {
       maskTexture = device.createTexture({
@@ -106,9 +108,20 @@ export function singleBandPipeline(
         height,
         sampler: { minFilter: "nearest", magFilter: "nearest" },
       });
-      byteLength += mask.byteLength;
+      byteLength += mask.byteLength * 2;
     }
-    return { texture, mask: maskTexture, byteLength, width, height };
+    return {
+      texture,
+      mask: maskTexture,
+      byteLength,
+      width,
+      height,
+      image,
+      x,
+      y,
+      values: data,
+      validMask: mask,
+    };
   };
 
   const renderTile: SingleBandPipeline["renderTile"] = (data) => {
