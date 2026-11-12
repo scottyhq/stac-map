@@ -8,6 +8,7 @@ import {
   Table,
   vectorFromArray,
 } from "apache-arrow";
+import type { StacItem } from "stac-ts";
 import { toaster } from "../components/ui/toaster";
 import type { StacItemCollection } from "../types/stac";
 import {
@@ -463,4 +464,119 @@ export function getAdjacentTimelineIds(
   const previous = timeline.slice(0, index).reverse().find(inFilter);
   const next = timeline.slice(index + 1).find(inFilter);
   return { previous: previous?.id ?? null, next: next?.id ?? null };
+}
+
+/**
+ * The asset keys in the file's `assets` struct column (e.g. `["data",
+ * "thumbnail"]`), read from the Arrow schema. Empty if there's no such column.
+ */
+export async function fetchStacGeoparquetAssetKeys({
+  href,
+  connection,
+  hivePartitioning,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+}): Promise<string[]> {
+  const source = await readParquetSql(connection, href, hivePartitioning);
+  try {
+    const result = (await connection.query(
+      `SELECT assets FROM ${source} LIMIT 0`
+    )) as unknown as Table;
+    const type = result.schema.fields[0]?.type as {
+      children?: { name: string }[];
+    };
+    return type.children?.map((child) => child.name) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Number of items matching `where`. */
+export async function fetchStacGeoparquetCount({
+  href,
+  connection,
+  hivePartitioning,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+  where?: string;
+}): Promise<number> {
+  const result = await executeDuckdbQuery({
+    connection,
+    href,
+    hivePartitioning,
+    where,
+    select: "COUNT(*) AS count",
+  });
+  return Number(result.toArray()[0]?.toJSON().count ?? 0);
+}
+
+/**
+ * The hrefs of `assetKeys` for every item matching `where`, ordered by
+ * datetime then id. Items missing an asset are skipped for that asset.
+ */
+export async function fetchStacGeoparquetAssetHrefs({
+  href,
+  connection,
+  hivePartitioning,
+  where,
+  assetKeys,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+  where?: string;
+  assetKeys: string[];
+}): Promise<{ id: string; assetKey: string; href: string }[]> {
+  if (assetKeys.length === 0) return [];
+  const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  const columns = assetKeys
+    .map((key, i) => `assets.${quote(key)}.href AS "a${i}"`)
+    .join(", ");
+  const source = await readParquetSql(connection, href, hivePartitioning);
+  const query = `SELECT id, ${columns} FROM ${source}${
+    where ? ` WHERE ${where}` : ""
+  } ORDER BY datetime, id`;
+  const result = (await connection.query(query)) as unknown as Table;
+  const hrefs: { id: string; assetKey: string; href: string }[] = [];
+  for (const row of result.toArray()) {
+    const json = row.toJSON();
+    assetKeys.forEach((assetKey, i) => {
+      const value = json[`a${i}`];
+      if (value) hrefs.push({ id: String(json.id), assetKey, href: value });
+    });
+  }
+  return hrefs;
+}
+
+/** Full STAC items matching `where`, ordered by datetime then id. */
+export async function fetchStacGeoparquetItems({
+  href,
+  connection,
+  hivePartitioning,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+  where?: string;
+}): Promise<StacItem[]> {
+  const source = await readParquetSql(connection, href, hivePartitioning);
+  const query = `SELECT * REPLACE ST_AsGeoJSON(geometry) AS geometry FROM ${source}${
+    where ? ` WHERE ${where}` : ""
+  } ORDER BY datetime, id`;
+  const result = (await connection.query(query)) as unknown as Table;
+  if (result.numRows === 0) return [];
+  const stacWasm = await loadStacWasm();
+  return (stacWasm.arrowToStacJson(result) as StacItem[]).map((item) => ({
+    ...item,
+    geometry:
+      typeof item.geometry === "string"
+        ? JSON.parse(item.geometry)
+        : item.geometry,
+  }));
 }

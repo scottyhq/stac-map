@@ -7,7 +7,11 @@ import {
   type BandRange,
 } from "@/utils/single-band";
 import {
+  fetchStacGeoparquetAssetHrefs,
+  fetchStacGeoparquetAssetKeys,
+  fetchStacGeoparquetCount,
   fetchStacGeoparquetItem,
+  fetchStacGeoparquetItems,
   fetchStacGeoparquetTable,
   fetchStacGeoparquetTimeline,
   fetchStacGeoparquetValue,
@@ -124,6 +128,101 @@ export function useStacGeoparquetTimeline({
     // keep showing the old ticks while the new one loads.
     placeholderData: keepPreviousData,
     staleTime: Infinity,
+  });
+}
+
+export function useStacGeoparquetAssetKeys({
+  href,
+  connection,
+  enabled = true,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  enabled?: boolean;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: ["stac-geoparquet-asset-keys", href, hivePartitioning],
+    queryFn: async () =>
+      fetchStacGeoparquetAssetKeys({ href, connection, hivePartitioning }),
+    enabled,
+    staleTime: Infinity,
+  });
+}
+
+export function useStacGeoparquetCount({
+  href,
+  connection,
+  where,
+  enabled = true,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  where?: string;
+  enabled?: boolean;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: ["stac-geoparquet-count", href, where ?? null, hivePartitioning],
+    queryFn: async () =>
+      fetchStacGeoparquetCount({ href, connection, hivePartitioning, where }),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Asset hrefs for the "Download items" dialog. */
+export function useStacGeoparquetAssetHrefs({
+  href,
+  connection,
+  where,
+  assetKeys,
+  enabled = true,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  where?: string;
+  assetKeys: string[];
+  enabled?: boolean;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: [
+      "stac-geoparquet-asset-hrefs",
+      href,
+      where ?? null,
+      assetKeys,
+      hivePartitioning,
+    ],
+    queryFn: async () =>
+      fetchStacGeoparquetAssetHrefs({
+        href,
+        connection,
+        hivePartitioning,
+        where,
+        assetKeys,
+      }),
+    enabled: enabled && assetKeys.length > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Full items matching `where`, for building a VRT. */
+export function useStacGeoparquetItems({
+  href,
+  connection,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  where?: string;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: ["stac-geoparquet-items", href, where ?? null, hivePartitioning],
+    queryFn: async () =>
+      fetchStacGeoparquetItems({ href, connection, hivePartitioning, where }),
+    placeholderData: keepPreviousData,
   });
 }
 
