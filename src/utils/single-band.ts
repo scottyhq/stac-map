@@ -39,8 +39,7 @@ function getFirstStacBand(asset: StacAsset): StacBand | undefined {
 
 export function getStacBandStatistics(asset: StacAsset): BandRange | undefined {
   const statistics = getFirstStacBand(asset)?.statistics as
-    | { minimum?: unknown; maximum?: unknown }
-    | undefined;
+    { minimum?: unknown; maximum?: unknown } | undefined;
   if (!statistics) return undefined;
   return toRange(statistics.minimum, statistics.maximum);
 }

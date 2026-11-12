@@ -70,9 +70,9 @@ describe("getStacBandStatistics (STAC 1.1 bands)", () => {
 describe("getStacBandUnit", () => {
   it("reads the unit from bands or raster:bands", () => {
     expect(getStacBandUnit(asset({ bands: [{ unit: "dB" }] }))).toBe("dB");
-    expect(
-      getStacBandUnit(asset({ "raster:bands": [{ unit: "m/yr" }] }))
-    ).toBe("m/yr");
+    expect(getStacBandUnit(asset({ "raster:bands": [{ unit: "m/yr" }] }))).toBe(
+      "m/yr"
+    );
   });
 
   it("returns undefined when there's no unit", () => {
