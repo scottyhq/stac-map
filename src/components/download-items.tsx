@@ -2,9 +2,15 @@ import {
   useStacGeoparquetAssetHrefs,
   useStacGeoparquetAssetKeys,
   useStacGeoparquetCount,
+  useStacGeoparquetFrames,
   useStacGeoparquetItems,
 } from "@/hooks/stac";
 import { useStore } from "@/store";
+import {
+  getVideoSize,
+  recordAnimation,
+  type AnimationProgress,
+} from "@/utils/animation";
 import { msToIsoLabel } from "@/utils/datetime";
 import {
   buildDuckdbCommand,
@@ -36,7 +42,9 @@ import {
   DownloadTrigger,
   HStack,
   IconButton,
+  NativeSelect,
   Portal,
+  Progress,
   RadioGroup,
   Spinner,
   Stack,
@@ -45,8 +53,15 @@ import {
 } from "@chakra-ui/react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { LuDownload, LuLayers, LuList, LuTerminal } from "react-icons/lu";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  LuDownload,
+  LuFilm,
+  LuLayers,
+  LuList,
+  LuTerminal,
+} from "react-icons/lu";
+import { useMap } from "react-map-gl/maplibre";
 
 /**
  * "Download items" for a stac-geoparquet file: exports the asset hrefs of the
@@ -195,6 +210,9 @@ function DownloadItemsBody({
           <Tabs.Trigger value={"vrt"}>
             <LuLayers /> VRT
           </Tabs.Trigger>
+          <Tabs.Trigger value={"animation"}>
+            <LuFilm /> Animation
+          </Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content value={"urls"}>
           <UrlList
@@ -220,6 +238,9 @@ function DownloadItemsBody({
             assetKeys={selectedKeys}
             mapView={filter.bbox}
           />
+        </Tabs.Content>
+        <Tabs.Content value={"animation"}>
+          <Animation href={href} connection={connection} where={where} />
         </Tabs.Content>
       </Tabs.Root>
     </Stack>
@@ -553,6 +574,281 @@ function Vrt({
 function bytesPerPixel(dataType: string): number {
   const bits = Number(dataType.match(/\d+/)?.[0] ?? 8);
   return (dataType.startsWith("C") ? 2 : 1) * Math.max(1, bits / 8);
+}
+
+type RecordingState =
+  | { status: "idle" }
+  | { status: "recording"; progress: AnimationProgress }
+  | { status: "done"; url: string; blob: Blob; timedOut: number }
+  | { status: "error"; message: string };
+
+const FPS_OPTIONS = [1, 2, 4, 8];
+
+function Animation({
+  href,
+  connection,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  where?: string;
+}) {
+  const frames = useStacGeoparquetFrames({ href, connection, where });
+  const visualization = useStore((store) => store.visualization);
+  const { map } = useMap();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [fps, setFps] = useState(2);
+  const [lockRange, setLockRange] = useState(true);
+  const [labels, setLabels] = useState(true);
+  const [scaleBar, setScaleBar] = useState(true);
+  const [colorBar, setColorBar] = useState(true);
+  const [state, setState] = useState<RecordingState>({ status: "idle" });
+
+  // Stop recording if the dialog closes; free the video when it's replaced.
+  useEffect(() => () => abortRef.current?.abort(), []);
+  const url = state.status === "done" ? state.url : undefined;
+  useEffect(
+    () => () => {
+      if (url) URL.revokeObjectURL(url);
+    },
+    [url]
+  );
+
+  const assetKey = visualization?.startsWith("asset:")
+    ? visualization.slice("asset:".length)
+    : undefined;
+  const unsupported = !!visualization && !assetKey;
+  const count = frames.data?.length ?? 0;
+  const stem = (href.split("/").pop() ?? "items").replace(/\.parquet$/i, "");
+  const extension =
+    state.status === "done" && state.blob.type.includes("webm")
+      ? "webm"
+      : "mp4";
+  const fileName = `${stem}${assetKey ? `-${assetKey}` : ""}.${extension}`;
+
+  const record = async () => {
+    const maplibre = map?.getMap();
+    const container = maplibre?.getContainer();
+    const canvas = canvasRef.current;
+    if (!container || !canvas || !frames.data) return;
+    const size = getVideoSize(
+      container.clientWidth,
+      container.clientHeight,
+      window.devicePixelRatio
+    );
+    canvas.width = size.width;
+    canvas.height = size.height;
+    // Measured like MapLibre's scale control: 100 px across the map's centre.
+    let metersPerCssPixel: number | undefined;
+    if (scaleBar && maplibre) {
+      const x = container.clientWidth / 2;
+      const y = container.clientHeight / 2;
+      const meters = maplibre
+        .unproject([x - 50, y])
+        .distanceTo(maplibre.unproject([x + 50, y]));
+      if (meters > 0) metersPerCssPixel = meters / 100;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let timedOut = 0;
+    setState({
+      status: "recording",
+      progress: { done: 0, total: frames.data.length, timedOut: 0 },
+    });
+    try {
+      const blob = await recordAnimation({
+        frames: frames.data,
+        container,
+        canvas,
+        fps,
+        label: assetKey,
+        labels,
+        metersPerCssPixel,
+        colorBar,
+        lockRange,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          timedOut = progress.timedOut;
+          setState({ status: "recording", progress });
+        },
+      });
+      setState({
+        status: "done",
+        url: URL.createObjectURL(blob),
+        blob,
+        timedOut,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) setState({ status: "idle" });
+      else
+        setState({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+    } finally {
+      abortRef.current = null;
+    }
+  };
+
+  const recording = state.status === "recording";
+  return (
+    <Stack gap={3} fontSize={"sm"}>
+      <Text>
+        <strong>{frames.data ? count.toLocaleString() : "…"}</strong> frame
+        {count === 1 ? "" : "s"}, one per item in the current map view and time
+        range, oldest first
+        {count > 0 && ` (≈ ${Math.max(1, Math.round(count / fps))} s)`}.
+      </Text>
+      <Text color={unsupported ? "fg.warning" : "fg.muted"} fontSize={"xs"}>
+        {unsupported
+          ? "The animation records a COG asset drawn on the map. Select an item and choose an asset under Visualization first."
+          : assetKey
+            ? `Each frame shows ${assetKey}, styled as it is on the map. `
+            : "Each frame shows the item's default COG asset. "}
+        {!unsupported &&
+          "Recording steps through the items on the map, so keep this tab in front until it finishes."}
+      </Text>
+      <HStack gap={4} wrap={"wrap"}>
+        <HStack gap={2}>
+          <Text>Frames per second</Text>
+          <NativeSelect.Root size={"xs"} width={"16"} disabled={recording}>
+            <NativeSelect.Field
+              value={fps}
+              onChange={(e) => setFps(Number(e.currentTarget.value))}
+            >
+              {FPS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </NativeSelect.Field>
+            <NativeSelect.Indicator />
+          </NativeSelect.Root>
+        </HStack>
+        <Checkbox.Root
+          size={"sm"}
+          checked={lockRange}
+          disabled={recording}
+          onCheckedChange={(e) => setLockRange(!!e.checked)}
+        >
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Same colour range for every frame</Checkbox.Label>
+        </Checkbox.Root>
+        <Checkbox.Root
+          size={"sm"}
+          checked={labels}
+          disabled={recording}
+          onCheckedChange={(e) => setLabels(!!e.checked)}
+        >
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Add labels</Checkbox.Label>
+        </Checkbox.Root>
+        <Checkbox.Root
+          size={"sm"}
+          checked={scaleBar}
+          disabled={recording}
+          onCheckedChange={(e) => setScaleBar(!!e.checked)}
+        >
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Scale bar</Checkbox.Label>
+        </Checkbox.Root>
+        <Checkbox.Root
+          size={"sm"}
+          checked={colorBar}
+          disabled={recording}
+          onCheckedChange={(e) => setColorBar(!!e.checked)}
+        >
+          <Checkbox.HiddenInput />
+          <Checkbox.Control />
+          <Checkbox.Label>Colour bar</Checkbox.Label>
+        </Checkbox.Root>
+      </HStack>
+      <HStack gap={2}>
+        {recording ? (
+          <Button
+            size={"xs"}
+            variant={"surface"}
+            onClick={() => abortRef.current?.abort()}
+          >
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            size={"xs"}
+            disabled={!count || unsupported || !map}
+            onClick={record}
+          >
+            <LuFilm /> {state.status === "done" ? "Record again" : "Record"}
+          </Button>
+        )}
+        {state.status === "done" && (
+          <DownloadTrigger
+            fileName={fileName}
+            mimeType={state.blob.type}
+            data={() => state.blob}
+            asChild
+          >
+            <Button size={"xs"} variant={"surface"}>
+              <LuDownload /> {fileName}
+            </Button>
+          </DownloadTrigger>
+        )}
+        {state.status === "done" && (
+          <Badge>{formatBytes(state.blob.size)}</Badge>
+        )}
+      </HStack>
+      {recording && (
+        <Stack gap={1}>
+          <Progress.Root
+            size={"xs"}
+            value={state.progress.done}
+            max={state.progress.total}
+          >
+            <Progress.Track>
+              <Progress.Range />
+            </Progress.Track>
+          </Progress.Root>
+          <Text color={"fg.muted"} fontSize={"xs"}>
+            Frame {state.progress.done} of {state.progress.total}
+            {state.progress.timedOut > 0 &&
+              ` (${state.progress.timedOut} captured before all tiles loaded)`}
+          </Text>
+        </Stack>
+      )}
+      {state.status === "done" && state.timedOut > 0 && (
+        <Text color={"fg.warning"} fontSize={"xs"}>
+          {state.timedOut} frame{state.timedOut === 1 ? " was" : "s were"}{" "}
+          captured before all of their tiles loaded.
+        </Text>
+      )}
+      {state.status === "error" && (
+        <Text color={"fg.error"}>{state.message}</Text>
+      )}
+      {/* The frame being recorded, as a live preview. */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          width: "100%",
+          borderRadius: 4,
+          display: recording ? "block" : "none",
+        }}
+      />
+      {state.status === "done" && (
+        <video
+          src={state.url}
+          controls
+          loop
+          autoPlay
+          muted
+          style={{ width: "100%", borderRadius: 4 }}
+        />
+      )}
+    </Stack>
+  );
 }
 
 function formatBytes(bytes: number): string {

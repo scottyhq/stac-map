@@ -29,14 +29,25 @@ function toRange(min: unknown, max: unknown): BandRange | undefined {
   return { min, max };
 }
 
+type StacBand = { statistics?: unknown; unit?: unknown };
+
+/** The asset's first band, from STAC 1.1 `bands` or the raster extension. */
+function getFirstStacBand(asset: StacAsset): StacBand | undefined {
+  const fields = asset as { bands?: StacBand[]; "raster:bands"?: StacBand[] };
+  return fields.bands?.[0] ?? fields["raster:bands"]?.[0];
+}
+
 export function getStacBandStatistics(asset: StacAsset): BandRange | undefined {
-  const bands = (asset as { "raster:bands"?: { statistics?: unknown }[] })[
-    "raster:bands"
-  ];
-  const statistics = bands?.[0]?.statistics as
+  const statistics = getFirstStacBand(asset)?.statistics as
     { minimum?: unknown; maximum?: unknown } | undefined;
   if (!statistics) return undefined;
   return toRange(statistics.minimum, statistics.maximum);
+}
+
+/** The unit of the asset's first band (e.g. "dB", "m/yr"), if given. */
+export function getStacBandUnit(asset: StacAsset): string | undefined {
+  const unit = getFirstStacBand(asset)?.unit;
+  return typeof unit === "string" && unit.trim() ? unit.trim() : undefined;
 }
 
 export function getStoredBandStatistics(

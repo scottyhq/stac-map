@@ -73,6 +73,8 @@ export default function Map({
         zoom: 1,
       }}
       projection={projection}
+      // Lets the animation export read the map's pixels after it renders.
+      canvasContextAttributes={{ preserveDrawingBuffer: true }}
       mapStyle={`https://basemaps.cartocdn.com/gl/${mapStyle}/style.json`}
       style={{ zIndex: 0 }}
       onLoad={(e) => {

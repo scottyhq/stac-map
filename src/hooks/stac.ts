@@ -10,6 +10,7 @@ import {
   fetchStacGeoparquetAssetHrefs,
   fetchStacGeoparquetAssetKeys,
   fetchStacGeoparquetCount,
+  fetchStacGeoparquetFrames,
   fetchStacGeoparquetItem,
   fetchStacGeoparquetItems,
   fetchStacGeoparquetTable,
@@ -222,6 +223,25 @@ export function useStacGeoparquetItems({
     queryKey: ["stac-geoparquet-items", href, where ?? null, hivePartitioning],
     queryFn: async () =>
       fetchStacGeoparquetItems({ href, connection, hivePartitioning, where }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Items to animate: ids and datetimes matching `where`, oldest first. */
+export function useStacGeoparquetFrames({
+  href,
+  connection,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  where?: string;
+}) {
+  const hivePartitioning = useStore((store) => store.hivePartitioning);
+  return useQuery({
+    queryKey: ["stac-geoparquet-frames", href, where ?? null, hivePartitioning],
+    queryFn: async () =>
+      fetchStacGeoparquetFrames({ href, connection, hivePartitioning, where }),
     placeholderData: keepPreviousData,
   });
 }
