@@ -31,3 +31,21 @@ describe("bookmarks", () => {
     expect(useStore.getState().bookmarks).toEqual([]);
   });
 });
+
+describe("setHref", () => {
+  it("clears the selected stac-geoparquet item when the href changes", () => {
+    const { setHref, setStacGeoparquetId } = useStore.getState();
+    setHref("https://example.com/a.parquet");
+    setStacGeoparquetId("item-from-a");
+    setHref("https://example.com/b.parquet");
+    expect(useStore.getState().stacGeoparquetId).toBeNull();
+  });
+
+  it("keeps it when the href is set to the same value", () => {
+    const { setHref, setStacGeoparquetId } = useStore.getState();
+    setHref("https://example.com/a.parquet");
+    setStacGeoparquetId("item-from-a");
+    setHref("https://example.com/a.parquet");
+    expect(useStore.getState().stacGeoparquetId).toBe("item-from-a");
+  });
+});
