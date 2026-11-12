@@ -14,6 +14,7 @@ import { Colormap, LogRescale } from "../../src/utils/colormap";
 import {
   accumulateMinMax,
   getStacBandStatistics,
+  getStacBandUnit,
   getStoredBandStatistics,
   logScaleRange,
   renderTileTriggers,
@@ -53,6 +54,30 @@ describe("getStacBandStatistics", () => {
         })
       )
     ).toBeUndefined();
+  });
+});
+
+describe("getStacBandStatistics (STAC 1.1 bands)", () => {
+  it("reads statistics from bands", () => {
+    expect(
+      getStacBandStatistics(
+        asset({ bands: [{ statistics: { minimum: -30, maximum: 5 } }] })
+      )
+    ).toEqual({ min: -30, max: 5 });
+  });
+});
+
+describe("getStacBandUnit", () => {
+  it("reads the unit from bands or raster:bands", () => {
+    expect(getStacBandUnit(asset({ bands: [{ unit: "dB" }] }))).toBe("dB");
+    expect(
+      getStacBandUnit(asset({ "raster:bands": [{ unit: "m/yr" }] }))
+    ).toBe("m/yr");
+  });
+
+  it("returns undefined when there's no unit", () => {
+    expect(getStacBandUnit(asset({}))).toBeUndefined();
+    expect(getStacBandUnit(asset({ bands: [{ unit: " " }] }))).toBeUndefined();
   });
 });
 

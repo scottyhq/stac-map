@@ -3,6 +3,7 @@ import { useStore } from "@/store";
 import type { StacAssets, StacItemCollection } from "@/types/stac";
 import { createPixelSampler } from "@/utils/pixel-sampler";
 import {
+  getStacBandUnit,
   isSingleBandGreyscale,
   renderTileTriggers,
   resolveBandRange,
@@ -168,6 +169,25 @@ export default function Visualization({
     [selectedCogGeotiff]
   );
   const setPixelSampler = useStore((store) => store.setPixelSampler);
+  const setVisualizationStatus = useStore(
+    (store) => store.setVisualizationStatus
+  );
+
+  const shownCogHref =
+    enabled && selected?.startsWith("asset:") ? selectedCogHref : undefined;
+  useEffect(() => {
+    setVisualizationStatus({ href: shownCogHref ?? null });
+    return () => setVisualizationStatus({ href: null });
+  }, [shownCogHref, setVisualizationStatus]);
+
+  useEffect(() => {
+    setVisualizationStatus({ range: range ?? null });
+  }, [range, setVisualizationStatus]);
+
+  const unit = selectedAsset ? getStacBandUnit(selectedAsset) : undefined;
+  useEffect(() => {
+    setVisualizationStatus({ unit: unit ?? null });
+  }, [unit, setVisualizationStatus]);
 
   useEffect(() => {
     if (!enabled || !selected?.startsWith("asset:") || !pixelSampler) return;
@@ -182,6 +202,8 @@ export default function Visualization({
     if (selected.startsWith("asset:")) {
       if (!selectedCogGeotiff) return;
       const layerId = "visualization";
+      const onViewportLoad = () =>
+        setVisualizationStatus({ loadedHref: selectedCogHref ?? null });
       const pipeline = singleBandPipeline(
         selectedCogGeotiff,
         range,
@@ -203,10 +225,12 @@ export default function Visualization({
               onTileUnload: (tile) => {
                 if (tile.content) pixelSampler?.remove(tile.content);
               },
+              onViewportLoad,
             })
           : new COGLayer({
               id: layerId,
               source: selectedCogGeotiff,
+              onViewportLoad,
             })
       );
       return () => setLayer(layerId, undefined);
@@ -249,10 +273,12 @@ export default function Visualization({
     range,
     rasterStyle,
     pixelSampler,
+    selectedCogHref,
     tilejsonLink,
     wmtsLink,
     setLayer,
     setMaplibreLayer,
+    setVisualizationStatus,
   ]);
 
   if (collection.items.length === 0) return null;

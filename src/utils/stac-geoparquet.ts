@@ -579,3 +579,26 @@ export async function fetchStacGeoparquetItems({
         : item.geometry,
   }));
 }
+
+/** Ids and datetimes (ms since the epoch) of items matching `where`, oldest first. */
+export async function fetchStacGeoparquetFrames({
+  href,
+  connection,
+  hivePartitioning,
+  where,
+}: {
+  href: string;
+  connection: AsyncDuckDBConnection;
+  hivePartitioning: boolean;
+  where?: string;
+}): Promise<TimelineEntry[]> {
+  const source = await readParquetSql(connection, href, hivePartitioning);
+  const query = `SELECT id, epoch_ms(datetime) AS datetime_ms FROM ${source}${
+    where ? ` WHERE ${where}` : ""
+  } ORDER BY datetime, id`;
+  const result = (await connection.query(query)) as unknown as Table;
+  return result
+    .toArray()
+    .map((row) => row.toJSON())
+    .map((row) => ({ id: String(row.id), datetime: Number(row.datetime_ms) }));
+}

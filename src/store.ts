@@ -108,6 +108,21 @@ export interface State {
    */
   rasterRange: BandRange | null;
   setRasterRange: (range: BandRange | null) => void;
+  /**
+   * The COG the visualization layer is showing, the last COG whose tiles in
+   * view finished loading, and the value range it's drawn with. The animation
+   * export uses these to know when a frame is ready.
+   */
+  visualizationStatus: {
+    href: string | null;
+    loadedHref: string | null;
+    range: BandRange | null;
+    /** The unit of the shown asset's values, from its STAC band metadata. */
+    unit: string | null;
+  };
+  setVisualizationStatus: (
+    status: Partial<State["visualizationStatus"]>
+  ) => void;
   /** Samples the visualized single-band COG under the cursor, if any. */
   pixelSampler: PixelSampler | null;
   setPixelSampler: (pixelSampler: PixelSampler | null) => void;
@@ -202,6 +217,16 @@ export const useStore = create<State>()(
         set({ rasterStyle: { ...get().rasterStyle, ...style } }),
       rasterRange: null,
       setRasterRange: (rasterRange) => set({ rasterRange }),
+      visualizationStatus: {
+        href: null,
+        loadedHref: null,
+        range: null,
+        unit: null,
+      },
+      setVisualizationStatus: (status) =>
+        set({
+          visualizationStatus: { ...get().visualizationStatus, ...status },
+        }),
       pixelSampler: null,
       setPixelSampler: (pixelSampler) => set({ pixelSampler }),
       bookmarks: [],
