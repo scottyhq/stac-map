@@ -130,6 +130,8 @@ export const useStore = create<State>()(
         set({
           href,
           hrefIsParquet: !!href?.endsWith(".parquet"),
+          // A selected stac-geoparquet item belongs to the old href.
+          ...(href !== get().href && { stacGeoparquetId: null }),
         });
       },
       uploadedFile: null,
