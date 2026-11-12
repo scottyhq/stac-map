@@ -372,8 +372,9 @@ export async function fetchStacGeoparquetItem({
     href,
     hivePartitioning,
     select: "* REPLACE ST_AsGeoJSON(geometry) as geometry",
-    where: `id = '${id}'`,
+    where: `id = '${id.replaceAll("'", "''")}'`,
   });
+  if (result.numRows === 0) throw new Error(`No item with id "${id}"`);
   const stacWasm = await loadStacWasm();
   const item = stacWasm.arrowToStacJson(result)[0];
   item.geometry = JSON.parse(item.geometry);
